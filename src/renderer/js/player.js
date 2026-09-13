@@ -445,7 +445,10 @@
     vol.addEventListener('input', () => player.setVolume(Number(vol.value)));
     $('#trMute').addEventListener('click', () => { player.toggleMute(); paintMute(); });
     const paintMute = () => {
-      $('#trMute').classList.toggle('on', player.media.muted || player.media.volume === 0);
+      const on = !!(player.media.muted || player.media.volume === 0);
+      const btn = $('#trMute');
+      btn.classList.toggle('on', on);
+      btn.title = on ? '取消静音' : '静音';
     };
     player.on('state', paintMute);
 

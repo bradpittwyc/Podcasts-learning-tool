@@ -556,6 +556,35 @@ function install(ctx) {
       };
     })()`);
 
+    // 静音按钮：静音后必须是「喇叭上打叉」，不是原来的声波图标
+    out['10a 静音图标切换'] = await run('10a', `(async () => {
+      const btn = document.getElementById('trMute');
+      const media = document.getElementById('video');
+      const v = document.querySelector('#trMute .ic-vol');
+      const m = document.querySelector('#trMute .ic-mute');
+      if (!btn || !v || !m || !media) return { error: '静音按钮或图标缺失' };
+      const vis = (n) => getComputedStyle(n).visibility;
+      const box = (n) => { const r = n.getBoundingClientRect(); return { w: Math.round(r.width), h: Math.round(r.height), cy: Math.round(r.top + r.height / 2) }; };
+      // 先回到「有声音」的状态
+      media.volume = 1; media.muted = false;
+      btn.click();
+      await new Promise((r) => setTimeout(r, 200));
+      const muted = {
+        on: btn.classList.contains('on'),
+        volVisible: vis(v), muteVisible: vis(m),
+        title: btn.title, mediaMuted: !!media.muted,
+        btnBox: box(btn), volBox: box(v), muteBox: box(m)
+      };
+      btn.click();                                  // 再点一次应还原成声波图标
+      await new Promise((r) => setTimeout(r, 200));
+      const back = {
+        on: btn.classList.contains('on'),
+        volVisible: vis(v), muteVisible: vis(m),
+        title: btn.title, mediaMuted: !!media.muted
+      };
+      return { muted, back };
+    })()`);
+
     // 点一个「远低于 GRE 级别」的常用词，必须仍然能查（弹面板 + 真的发出请求）
     out['6b 低级别常用词仍可查'] = await run('6b', `(async () => {
       const before = window.__pltSmoke.costStats();

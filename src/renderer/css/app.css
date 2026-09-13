@@ -115,6 +115,22 @@ button { cursor: default; border: none; background: none; }
 #btnPlay { --icon-size: 20px; }
 #trPlay { --icon-size: 19px; }
 #miniPlay { --icon-size: 16px; }
+
+/* ── 静音图标交换（正常=喇叭带声波，静音=喇叭上打叉）──
+   与播放/暂停同一套：两个 SVG 重叠在同一格，只切 visibility，
+   避免切换时图标位置跳动或撑高按钮。 */
+#trMute { --icon-size: 18px; }
+#trMute svg {
+  display: block;
+  width: var(--icon-size);
+  height: var(--icon-size);
+  grid-area: 1 / 1;
+  place-self: center;
+  overflow: visible;
+}
+#trMute .ic-mute { visibility: hidden; }
+#trMute.on .ic-vol { visibility: hidden; }
+#trMute.on .ic-mute { visibility: visible; }
 #btnSettings svg { display: block; width: 18px; height: 18px; }
 
 #btnPlay .ic-pause, #trPlay .ic-pause, #miniPlay .ic-pause { visibility: hidden; }

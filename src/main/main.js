@@ -1552,6 +1552,24 @@ function runSmokeTest() {
         mainWindow.setSize(before.width, before.height);
         await js(`(() => { const b = document.getElementById('dictClose'); if (b) b.click(); })()`).catch(() => { });
 
+        // 静音图标留档：正常 / 静音 各截一张按钮 1:1
+        try {
+          const clip = await js(`(() => {
+            const r = document.getElementById('trMute').getBoundingClientRect();
+            return { x: Math.round(r.x) - 8, y: Math.round(r.y) - 8, width: Math.round(r.width) + 16, height: Math.round(r.height) + 16 };
+          })()`);
+          if (clip && clip.width) {
+            const s1 = await mainWindow.webContents.capturePage(clip);
+            fs.writeFileSync(out.replace(/\.png$/i, '-mute.png'), s1.toPNG());
+            await js(`document.getElementById('trMute').click()`);
+            await new Promise((r) => setTimeout(r, 300));
+            const s2 = await mainWindow.webContents.capturePage(clip);
+            fs.writeFileSync(out.replace(/\.png$/i, '-muted.png'), s2.toPNG());
+            await js(`document.getElementById('trMute').click()`);   // 还原成有声
+            log('截图（静音图标）：' + out.replace(/\.png$/i, '-mute.png') + ' / -muted.png');
+          }
+        } catch (_) { /* 截图失败不影响判定 */ }
+
         log('【9a】' + JSON.stringify({ screenW: screen.getPrimaryDisplay().workAreaSize.width, wide: wideStep, narrow: narrowStep, zoomed: zoomStep, back: backStep }));
         const hasMenu = (s) => s && s.selVisible === true && s.menu && s.menu.visible === true && (s.menu.items || []).length === 9;
         rateOk = !!(wideStep && wideStep.chipVisible === true && wideStep.selVisible === false

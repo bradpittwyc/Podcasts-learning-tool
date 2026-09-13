@@ -100,6 +100,17 @@ if (i > 0) {
           && zoom.chipVisible === false && zoom.selVisible === true
           && zoom.menu && zoom.menu.visible === true && (zoom.menu.items || []).length === 9
           && back.chipVisible === true && back.selVisible === false;
+      })()],
+      ['10a 静音后图标变成「喇叭打叉」', (() => {
+        const r = obj['10a 静音图标切换'];
+        if (!r || r.error) return false;
+        const m = r.muted || {}; const b = r.back || {};
+        // 静音：打叉图标可见、声波图标隐藏、按钮高亮、确实 muted、两个图标同心不跳动
+        const centered = m.btnBox && m.volBox && m.muteBox
+          && Math.abs(m.volBox.cy - m.btnBox.cy) <= 1 && Math.abs(m.muteBox.cy - m.btnBox.cy) <= 1;
+        return m.on === true && m.muteVisible === 'visible' && m.volVisible === 'hidden'
+          && m.mediaMuted === true && centered
+          && b.on === false && b.volVisible === 'visible' && b.muteVisible === 'hidden' && b.mediaMuted === false;
       })()]
     ];
     console.log('\n=== 断言明细 ===');
