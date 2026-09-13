@@ -1160,10 +1160,28 @@ function runSmokeTest() {
       log('IPC 自检：' + JSON.stringify(diag).slice(0, 600));
 
       // 等待媒体加载完成（命令行传入的文件是异步加载的）
-      for (let i = 0; i < 60; i++) {
-        const st = await js('window.__pltSmoke.state()');
-        if (st && st.media) break;
-        await new Promise((r) => setTimeout(r, 250));
+      const waitMedia = async (ms) => {
+        const t0 = Date.now();
+        while (Date.now() - t0 < ms) {
+          const st = await js(`(() => {
+            const v = document.getElementById('video');
+            return { hasMedia: !!window.__pltSmoke.state().media, readyState: v.readyState, duration: v.duration, error: v.error ? v.error.code : null };
+          })()`);
+          if (st.hasMedia && st.duration > 0) return st;
+          await new Promise((r) => setTimeout(r, 250));
+        }
+        return await js(`(() => {
+          const v = document.getElementById('video');
+          return { hasMedia: !!window.__pltSmoke.state().media, readyState: v.readyState, duration: v.duration, error: v.error ? v.error.code : null, src: String(v.currentSrc || v.src).slice(0, 80), networkState: v.networkState };
+        })()`);
+      };
+      let mediaReady = await waitMedia(20000);
+      if (!mediaReady || !(mediaReady.duration > 0)) {
+        // 卡在 readyState 0 时（两次 load 互相打断的典型症状）重载一次
+        log('媒体首次加载未就绪，重试一次：' + JSON.stringify(mediaReady));
+        await js(`window.__pltOpenFile(${JSON.stringify(smokeFile())})`).catch(() => { });
+        mediaReady = await waitMedia(15000);
+        log('重试后：' + JSON.stringify(mediaReady));
       }
 
       log('video 元素：' + JSON.stringify(await js(`(() => {

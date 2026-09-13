@@ -783,13 +783,17 @@
     await loadMedia(list[0]);
   }
 
+  let loadSeq = 0;   // 媒体加载序号：并发调用时只保留最后一次，避免两次 load() 互相打断
+
   async function loadMedia(info) {
+    const mySeq = ++loadSeq;
     const previousMedia = state.media;
     const previousSubtitle = state.subtitle;
     state.media = info;
     player.load(info);
     await window.PLT.history.add({ path: info.path, name: info.name, kind: info.kind, position: 0, subtitlePath: state.subtitle ? state.subtitle.path : null });
     await loadHistory();
+    if (mySeq !== loadSeq) return;   // 期间又切了别的媒体 → 放弃本次的字幕处理
 
     // 自动找同名字幕
     const sibling = info.siblingSubtitle || (await window.PLT.file.findSiblingSubtitle(info.path) || {}).path || null;
