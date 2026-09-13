@@ -20,6 +20,8 @@ jobs:
       - run: npm ci
       - name: 运行自检
         run: npm test
+      - name: 运行更新通路自检
+        run: npm run test:update
 
   package:
     name: 打包（便携版 + 安装版）
@@ -33,22 +35,44 @@ jobs:
           node-version: '20'
           cache: npm
       - run: npm ci
+
       - name: 构建安装版与便携版
         run: npx electron-builder --win --publish never
+
+      # ⚠️ 资产名必须与 latest.yml 里写的一致（electron-builder 会把空格换成连字符），
+      #    否则 electron-updater 按 latest.yml 拼出来的下载地址会 404，安装版就永远升不了级。
+      #    所以这里统一把文件名规范化后再上传。
+      - name: 规范化资产名（空格 → 连字符）
+        shell: pwsh
+        run: |
+          Get-ChildItem release -File | Where-Object { $_.Name -match ' ' } | ForEach-Object {
+            $new = $_.Name -replace ' ', '-'
+            Rename-Item -LiteralPath $_.FullName -NewName $new
+            Write-Host "$($_.Name)  ->  $new"
+          }
+
       - name: 产出清单
         shell: pwsh
         run: Get-ChildItem release | Select-Object Name, Length | Format-Table -AutoSize
+
       - uses: actions/upload-artifact@v4
         with:
           name: PodcastsLearningTool-windows
           path: |
             release/*.exe
+            release/*.yml
             release/*.blockmap
           if-no-files-found: error
+
+      # 注意：CI 构建**不含**内嵌试用 Key（src/main/default-key.js 被 .gitignore 排除），
+      # 所以 CI 出的便携版需要用户自己填 Key；带 Key 的试用包只在本地构建。
       - name: 附加到 Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: release/*.exe
+          files: |
+            release/*.exe
+            release/*.yml
+            release/*.blockmap
           draft: false
           generate_release_notes: true

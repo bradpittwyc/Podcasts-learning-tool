@@ -212,6 +212,25 @@ npm run dist:portable   # 只出便携版
 
 ---
 
+## ⬆️ 自动升级
+
+程序连的是本仓库的 [GitHub Release](https://github.com/bradpittwyc/Podcasts-learning-tool/releases)，
+发现新版本会在**状态栏右下角**提示，点一下就能升级：
+
+| 你用的是 | 升级方式 |
+| --- | --- |
+| **安装版**（Setup） | 启动后自动检查 → 一键下载 → **静默原地安装**并自动重启（设置、生词本全部保留） |
+| **便携版**（Portable） | 自动检查 + 下载 → 程序退出后由后台脚本**替换 exe 并重新拉起**（便携版 exe 运行期间被系统占用，只能退出后再换） |
+
+- 手动入口：**帮助 → 检查更新…**，或 **设置 → 高级 → 软件更新**
+- **只提示，不自动下载** —— 不会在你上课/听写时突然占满带宽
+- 不想让它检查：设置 → 高级 → 软件更新 → 取消勾选「启动后自动检查更新」
+- 换包日志：便携版在 `PodcastsLearningData\update\update.log`（万一替换失败，可看日志并按提示手动改名）
+
+> 开发模式（`npm start`）不检查更新；`--smoke-update` 可以在开发模式下真连 GitHub 验证通路。
+
+---
+
 ## 🔒 便携版说明
 
 便携版（Portable）的行为：
@@ -230,6 +249,7 @@ src/
     main.js              窗口 / 无边框标题栏 / 自定义 plt-media:// 协议 / IPC / 菜单 / 全局快捷键 / 冒烟测试
     store.js             设置持久化（safeStorage 加密 API Key、便携模式路径）
     llm.js               大模型取词引擎：级别体系、批量合并、持久缓存、提示词
+    updater.js           自动更新：安装版走 electron-updater，便携版走自研换包脚本
     ocr.js               Windows.Media.Ocr 桥接（离线屏幕取词）
     screen-text.js       抓取前台程序选中文字（SendKeys + 剪贴板还原）
   preload/preload.js     contextBridge 白名单 API
@@ -244,12 +264,15 @@ src/
       dict.js            查词面板、批量扫描、成本统计、截图 OCR 框选
       shadow.js          跟读录音与 A/B 对比
       settings.js        设置面板（大模型 / 取词级别 / 外观 / 播放 / 高级）
+      updater-ui.js      更新界面（状态栏角标 / 更新面板 / 进度条）
       app.js             主控：文件导入、同步、导航、快捷键
 scripts/
   ocr.ps1                Windows OCR 实现（含 WinRT 异步桥接，UTF-8 with BOM）
   ocr-selftest.js        OCR 链路自检（生成测试图 → 识别 → 断言）
+  update-selftest.js     更新自检（版本比较 + 真跑便携版换包脚本）
+  publish-release.js     发布到 GitHub Release（保证资产名与 latest.yml 一致）
   build-dict.js          用 ECDICT 生成内置离线词典（npm run dict / dict:fetch）
-  ui-probe.js            UI 交互回归探测（播放图标/拖动/跳转/字幕菜单/锁定/查词）
+  ui-probe.js            UI 交互回归探测（播放图标/拖动/跳转/字幕菜单/查词/加载态）
   analyze-trace.js       解析冒烟 trace 并打印断言明细
   make-icon.js           纯 JS 生成多尺寸 ICO 图标
   make-sample.js         用 ffmpeg 生成示例媒体与中英字幕
@@ -264,12 +287,14 @@ resources/               内置离线词典（npm run dict 生成，不入库）
 ## 🧪 自检与验证
 
 ```powershell
-npm test          # 128 项无界面自检
-npm run test:ocr  # 验证 Windows OCR 链路（生成图片→识别→校验文本）
+npm test           # 129 项无界面自检
+npm run test:update # 18 项更新通路自检（版本比较 + 真跑一遍便携版换包脚本）
+npm run test:ocr   # 验证 Windows OCR 链路（生成图片→识别→校验文本）
 npm run dict:fetch # 下载 ECDICT 原始数据（63MB，仅首次）
-npm run dict      # 生成内置离线词典 resources/local-dict.json(.gz)
-npm run sample    # 用 ffmpeg 生成 60 秒示例视频/音频/中英字幕到 samples\
-npm run smoke     # 真实启动应用，加载示例、截图、检查播放与字幕同步（需先 npm run sample）
+npm run dict       # 生成内置离线词典 resources/local-dict.json(.gz)
+npm run sample     # 用 ffmpeg 生成 60 秒示例视频/音频/中英字幕到 samples\
+npm run smoke      # 真实启动应用，加载示例、截图、检查播放与字幕同步（需先 npm run sample）
+npm run test:all   # 三套自检一次跑完
 ```
 
 `npm test` 覆盖：时间戳解析与格式化、双语拆分、SRT/VTT/ASS/LRC/JSON/纯文本解析、序列化往返、
@@ -286,8 +311,12 @@ UTF-8/UTF-16/GBK 编码嗅探、正文分词与词形还原、级别分级判定
 | 进度条 pointerdown→move→up 拖到 50% | 断言 `currentTime ≈ 30s` |
 | 点第 24 / 12 行字幕 | 断言跳到 57.65s / 27.65s，且单击不自动播放 |
 | 字幕菜单内容 / 切换 / 关闭 / 恢复 | 点击后立刻生效 |
-| 🔒 锁定后点低级别词 | 断言被拦截且 **API 调用增量 = 0** |
-| 点词出释义 | 断言面板内容与来源徽标（本地词典 / AI 语境） |
+| 全部单词均可点选 | 断言零锁定：无 `.locked`、无 `not-allowed` 光标、无 title 提示 |
+| 点词出释义 | 断言面板内容与来源徽标（AI 语境）；低级词照查不误 |
+| 加载态文案 | 断言请求返回前显示「思考中........」+ 一个转圈，返回后被释义替换 |
+| 图标几何居中 | 断言三角/两道竖的圆心与按钮圆心误差 ≤ 0.6px |
+
+额外开关：`--smoke-update` 真连 GitHub Release 验证更新通路，`--smoke-update-download` 连下载一起验证。
 
 > 打包前的完整验证流程：`npm test` → `npm run test:ocr` → `npm run dict` → `npm run sample` → `npm run smoke -- --smoke-ui` → `npm run dist`
 
