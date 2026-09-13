@@ -44,7 +44,6 @@
   let settingsPanel = null;
   let rafSyncing = false;
   let lastCueIndex = -2;
-  let currentTranslateEnabled = false;
   let levelWatchGeneration = 0;
   let openFilesHandler = null;
   let booted = false;
@@ -208,7 +207,6 @@
     $('#trLoop').classList.toggle('on', loopMode !== 'none');
     $('#loopBadge').classList.toggle('hidden', loopMode === 'none');
     $('#loopBadge').textContent = loopMode === 'one' ? '1' : '∞';
-    currentTranslateEnabled = !!s.lookup.autoScan;
     if (lookup && lookup.levels.length) paintLevelLabel();
     if (player.current) player.applyDefaultPitch();
   }
@@ -743,8 +741,7 @@
     if (!list || !list.length) return;
     await applySubtitleResult(list[0]);
     if (list.length > 1) {
-      for (const item of list.slice(1)) await window.PLT.file.loadSubtitle(item.path);
-      toast(`已同时导入 ${list.length} 个字幕文件，当前使用第一个`, 'ok');
+      toast(`已导入 ${list.length} 个字幕文件，当前使用「${list[0].name}」；切换到其他文件请再次点「字幕」按钮单独打开。`, 'warn', 6000);
     }
   }
 
