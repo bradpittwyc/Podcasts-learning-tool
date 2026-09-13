@@ -89,6 +89,17 @@ if (i > 0) {
         return r.count === 2 && r.sameRowAsPhonetic === true
           && us && us.ok === true && /dictvoice/.test(us.url || '') && /type=2/.test(us.url || '')
           && uk && uk.ok === true && /dictvoice/.test(uk.url || '') && /type=1/.test(uk.url || '');
+      })()],
+      ['9a 倍速按钮：空间够=横排，被挤=折叠下拉，还原', (() => {
+        const m = t.match(/【9a】(\{[\s\S]*?\})\s*\n/);
+        if (!m) return false;
+        let r;
+        try { r = JSON.parse(m[1]); } catch (_) { return false; }
+        const wide = r.wide || {}; const zoom = r.zoomed || {}; const back = r.back || {};
+        return wide.chipVisible === true && wide.selVisible === false
+          && zoom.chipVisible === false && zoom.selVisible === true
+          && zoom.menu && zoom.menu.visible === true && (zoom.menu.items || []).length === 9
+          && back.chipVisible === true && back.selVisible === false;
       })()]
     ];
     console.log('\n=== 断言明细 ===');

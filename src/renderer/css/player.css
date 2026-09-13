@@ -174,7 +174,7 @@ body[data-theme="light"] .stage { background: radial-gradient(120% 100% at 50% 0
 .transport-row { display: flex; align-items: center; gap: var(--sp-3); }
 .tr-left, .tr-right { display: flex; align-items: center; gap: 2px; flex: 1; }
 .tr-right { justify-content: flex-end; }
-.tr-mid { flex: 2; display: flex; justify-content: center; }
+.tr-mid { flex: 2; display: flex; justify-content: center; min-width: 0; }
 
 .tr-btn {
   min-width: 32px; height: 32px;
@@ -208,6 +208,10 @@ body[data-theme="light"] .stage { background: radial-gradient(120% 100% at 50% 0
   border: 1px solid var(--stroke-1);
   overflow-x: auto;
   scrollbar-width: none;
+  /* 关键：flex 子项默认 min-width:auto，会被内容撑住永不收缩，
+     这样 scrollWidth 永远等于 clientWidth，检测不出「放不下」。
+     给 0 之后才会真正溢出，player.js 才能据此折叠成下拉。 */
+  min-width: 0;
 }
 .rate-presets::-webkit-scrollbar { display: none; }
 .rate-chip {
@@ -221,6 +225,29 @@ body[data-theme="light"] .stage { background: radial-gradient(120% 100% at 50% 0
 }
 .rate-chip:hover { background: var(--bg-hover); color: var(--text-1); }
 .rate-chip.active { background: var(--accent); color: var(--accent-text); font-weight: 700; }
+
+/* ── 窄窗口：倍速按钮折叠成「点击后上下可选」的下拉 ── */
+.rate-select {
+  display: none;
+  align-items: center;
+  gap: 6px;
+  padding: 5px 9px;
+  border-radius: var(--radius-sm);
+  background: var(--bg-card);
+  border: 1px solid var(--stroke-1);
+  color: var(--text-1);
+  font-size: 12.5px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background var(--dur-fast), border-color var(--dur-fast);
+}
+.rate-select:hover { background: var(--bg-card-alt); border-color: var(--stroke-2); }
+.rate-select:active { transform: scale(.97); }
+.rate-caret { width: 12px; height: 12px; opacity: .65; }
+body.rate-compact .rate-presets { display: none; }
+body.rate-compact .rate-select { display: inline-flex; }
 
 .volume { display: flex; align-items: center; gap: 6px; }
 .volume input[type="range"] { width: 82px; }

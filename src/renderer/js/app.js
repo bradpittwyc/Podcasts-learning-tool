@@ -170,6 +170,8 @@
         return { ...res, hasApiKey: !!state.settings.llm.hasApiKey, hint: state.settings.llm.apiKeyHint };
       },
       testLLM: () => window.PLT.settings.testLLM(),
+      /** 诊断：模拟界面缩放（倍速条会据此判断要不要折叠） */
+      setZoom: (steps) => { zoom(steps); return document.body.style.zoom; },
       /** 直接调用取词引擎（端到端验证分级过滤与费用） */
       lookupWords: (items, options) => window.PLT.llm.lookup(items, options),
       /** 只读诊断：当前是否正在扫描 */
@@ -591,6 +593,8 @@
     else zoomLevel = clamp(zoomLevel + delta, -0.4, 0.8);
     document.documentElement.style.fontSize = `${100 + zoomLevel * 100}%`;
     document.body.style.zoom = String(1 + zoomLevel * 0.35);
+    // 界面缩放不会触发 window.resize，倍速条要手动重算一次（窄了就折叠成下拉）
+    requestAnimationFrame(() => { try { player.updateRateLayout && player.updateRateLayout(); } catch (_) { } });
   }
 
   function about() {

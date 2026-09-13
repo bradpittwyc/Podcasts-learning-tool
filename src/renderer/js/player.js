@@ -180,6 +180,8 @@
 
     nudge(delta) { this.seek(this.currentTime + delta); }
 
+    get rate() { return this.media ? (this.media.playbackRate || 1) : 1; }
+
     setRate(rate, opts) {
       const r = clamp(Number(rate) || 1, 0.25, 2.5);
       this.media.playbackRate = r;
@@ -374,27 +376,69 @@
 
     // 速度
     const rateLabel = $('#btnRate');
+    const rateSelectLabel = $('#rateSelectLabel');
     const paintRate = (r) => {
       const txt = `${(Math.round(r * 100) / 100).toFixed(r % 1 === 0 ? 1 : 2).replace(/0$/, '').replace(/\.$/, '.0')}×`;
       rateLabel.textContent = txt;
+      if (rateSelectLabel) rateSelectLabel.textContent = txt;
       $$('#ratePresets .rate-chip').forEach((b) => b.classList.toggle('active', Math.abs(Number(b.dataset.rate) - r) < 0.001));
     };
     player.on('rate', paintRate);
+
+    // ── 倍速条自适应：窗口窄到放不下时，整排按钮折叠成一个下拉 ──
+    // 量的是「这一排的自然宽度」vs「分到的宽度」，比写死媒体查询准，
+    // 界面缩放（视图 → 放大/缩小）也能跟着变。
+    const rateRow = $('#ratePresets');
+    const rateSelect = $('#rateSelect');
+    let rateCompact = false;
+    function updateRateLayout() {
+      if (!rateRow || !rateSelect) return;
+      document.body.classList.remove('rate-compact');   // 先还原成横向，才量得到自然宽度
+      const need = rateRow.scrollWidth;
+      const avail = rateRow.clientWidth;
+      rateCompact = need > avail + 2;
+      document.body.classList.toggle('rate-compact', rateCompact);
+    }
+    window.addEventListener('resize', window.PLTUtil.debounce(updateRateLayout, 80));
+    // 空间变化不一定来自窗口：查词面板开合、界面缩放、侧栏收放都会改变可用宽度，
+    // 所以直接盯着这一排的容器，谁变就重算（rAF 合并，避免抖动）
+    if (typeof ResizeObserver !== 'undefined' && rateRow.parentElement) {
+      let rafId = 0;
+      const ro = new ResizeObserver(() => {
+        cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(updateRateLayout);
+      });
+      ro.observe(rateRow.parentElement);
+    }
+    player.on('rate', () => updateRateLayout());
+    updateRateLayout();
+    // 字体/布局稳定后（以及界面缩放后）再校一次
+    setTimeout(updateRateLayout, 300);
+    setTimeout(updateRateLayout, 1500);
+
+    function openRateMenu(anchor) {
+      const rect = anchor.getBoundingClientRect();
+      window.PLTUtil.contextMenu(rect.left - 40, rect.bottom + 4, RATES.map((rate) => ({
+        label: `${rate}×${rate === 1 ? '（原速）' : ''}`,
+        kbd: Math.abs(player.rate - rate) < 0.001 ? '✓' : '',
+        action: () => player.setRate(rate)
+      })));
+    }
+    if (rateSelect) {
+      rateSelect.addEventListener('click', (e) => { openRateMenu(rateSelect); e.stopPropagation(); });
+    }
 
     $('#btnSlow').addEventListener('click', () => player.stepRate(-1));
     $('#btnFast').addEventListener('click', () => player.stepRate(1));
     rateLabel.addEventListener('click', (e) => {
       // 点击速度按钮弹出预设菜单
-      const rect = rateLabel.getBoundingClientRect();
-      window.PLTUtil.contextMenu(rect.left - 40, rect.bottom + 4, RATES.map((rate) => ({
-        label: `${rate}×${rate === 1 ? '（原速）' : ''}`,
-        action: () => player.setRate(rate)
-      })));
+      openRateMenu(rateLabel);
       e.stopPropagation();
     });
     $$('#ratePresets .rate-chip').forEach((btn) => {
       btn.addEventListener('click', () => player.setRate(Number(btn.dataset.rate)));
     });
+    paintRate(player.rate);
 
     // 音量
     const vol = $('#volume');
@@ -440,7 +484,7 @@
       toast(next === 'none' ? '循环：关闭' : next === 'one' ? '循环：单句重复' : '循环：整篇重复');
     });
 
-    return { paint, paintRate };
+    return { paint, paintRate, updateRateLayout };
   }
 
   window.PLTPlayer = {

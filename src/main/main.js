@@ -1487,6 +1487,79 @@ function runSmokeTest() {
         log('更新通路：跳过（未传 --smoke-update）');
       }
 
+      // ── 窄窗口：倍速按钮应折叠成下拉；恢复窗口宽度后应还原 ──
+      let rateOk = true;
+      {
+        const before = mainWindow.getBounds();
+        const DEFAULT_W = 1480, DEFAULT_H = 920;
+        const wideW = screen.getPrimaryDisplay().workAreaSize.width - 20;   // 尽量铺满屏幕（≈用户最大化）
+        const inspect = () => js(`(async () => {
+          const presets = document.getElementById('ratePresets');
+          const sel = document.getElementById('rateSelect');
+          const w = (n) => { const r = n && n.getBoundingClientRect(); return r ? Math.round(r.width) : 0; };
+          const chipVisible = presets ? getComputedStyle(presets).display !== 'none' : false;
+          const selVisible = sel ? getComputedStyle(sel).display !== 'none' : false;
+          let menu = null;
+          if (selVisible) {
+            sel.click();
+            await new Promise((r) => setTimeout(r, 200));
+            const cm = document.getElementById('contextMenu');
+            const items = cm && !cm.classList.contains('hidden')
+              ? [...cm.querySelectorAll('.ctx-item')].map((b) => b.textContent.trim())
+              : [];
+            menu = { visible: !!(cm && !cm.classList.contains('hidden')), items };
+            document.body.click();
+          }
+          return {
+            chipVisible, selVisible, label: sel ? sel.textContent.trim() : '', menu,
+            need: presets ? presets.scrollWidth : 0,
+            avail: presets ? presets.clientWidth : 0,
+            row: w(document.querySelector('.transport-row')), mid: w(document.querySelector('.tr-mid')),
+            zoom: document.body.style.zoom || '1'
+          };
+        })()`).catch((e) => ({ error: e.message }));
+
+        const step = async (width, height, label, extra) => {
+          mainWindow.setSize(width, height);
+          await new Promise((r) => setTimeout(r, 700));
+          if (extra) { await js(extra).catch(() => { }); await new Promise((r) => setTimeout(r, 450)); }
+          const r = await inspect();
+          r.bounds = mainWindow.getBounds().width + 'x' + mainWindow.getBounds().height;
+          r.label = label;
+          return r;
+        };
+
+        // 尽量把窗口开大（=“窗口最大化，空间够”）→ 倍速排应还原成横向按钮
+        const wideStep = await step(wideW, DEFAULT_H, '宽窗口');
+        const narrowStep = await step(DEFAULT_W, DEFAULT_H, '默认宽度');
+        const zoomStep = await step(wideW, DEFAULT_H, '放大界面', 'window.__pltSmoke.setZoom(2)');
+        await js('window.__pltSmoke.setZoom(0)').catch(() => { });
+        const backStep = await step(wideW, DEFAULT_H, '还原');
+
+        // 折叠态截图留档（截传输栏那一块）
+        try {
+          const clip = await js(`(() => {
+            const r = document.getElementById('transport').getBoundingClientRect();
+            return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+          })()`);
+          if (clip && clip.width) {
+            const shot = await mainWindow.webContents.capturePage(clip);
+            fs.writeFileSync(out.replace(/\.png$/i, '-rate.png'), shot.toPNG());
+            log('截图（倍速条）：' + out.replace(/\.png$/i, '-rate.png'));
+          }
+        } catch (_) { /* 截图失败不影响判定 */ }
+
+        mainWindow.setSize(before.width, before.height);
+        await js(`(() => { const b = document.getElementById('dictClose'); if (b) b.click(); })()`).catch(() => { });
+
+        log('【9a】' + JSON.stringify({ screenW: screen.getPrimaryDisplay().workAreaSize.width, wide: wideStep, narrow: narrowStep, zoomed: zoomStep, back: backStep }));
+        const hasMenu = (s) => s && s.selVisible === true && s.menu && s.menu.visible === true && (s.menu.items || []).length === 9;
+        rateOk = !!(wideStep && wideStep.chipVisible === true && wideStep.selVisible === false
+          && hasMenu(zoomStep)
+          && backStep && backStep.chipVisible === true && backStep.selVisible === false);
+        log('倍速折叠自适配：' + (rateOk ? 'PASS' : 'FAIL'));
+      }
+
       log('结果：' + (ok && folderOk && uiOk && llmPathOk ? 'PASS' : 'FAIL')
         + `（媒体=${ok ? 'ok' : 'fail'}，文件夹导入=${folderOk ? 'ok' : 'fail'}，UI 交互=${uiOk ? 'ok' : 'fail'}，查词通路=${llmPathOk ? 'ok' : 'fail'}）`);
       clearTimeout(timer);

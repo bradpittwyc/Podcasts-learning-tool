@@ -185,6 +185,11 @@
             </div>
 
             <div class="tr-mid">
+              <!-- 窗口变窄时，这一排倍速按钮会折叠成右侧的下拉按钮（见 player.js 的 updateRateLayout） -->
+              <button class="rate-select" id="rateSelect" title="播放速度">
+                <span id="rateSelectLabel">1.0×</span>
+                <svg viewBox="0 0 12 12" class="rate-caret" aria-hidden="true"><path d="M2.8 4.8 6 8l3.2-3.2" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
               <div class="rate-presets" id="ratePresets">
                 <button data-rate="0.25" class="rate-chip">0.25×</button>
                 <button data-rate="0.5" class="rate-chip">0.5×</button>
