@@ -24,7 +24,17 @@ if (i > 0) {
         && obj['1b 真实坐标点击播放按钮'].playVisible === false && obj['1b 真实坐标点击播放按钮'].paused === false],
       ['1c 再点回到三角', obj['1c 再点一次（应回到三角 + paused）'] && obj['1c 再点一次（应回到三角 + paused）'].playVisible === true
         && obj['1c 再点一次（应回到三角 + paused）'].paused === true],
-      ['1d 三处图标同步', obj['1d 三个播放按钮图标是否同步'] && obj['1d 三个播放按钮图标是否同步'].allSynced === true],
+      ['1e 图标几何居中不跳动', (() => {
+        const g = obj['1e 播放图标几何'] || obj['1e 播放图标几何'];
+        if (!g || !g.playing || !g.paused) return false;
+        const dPlay = Math.abs(g.playing.play.cy - g.playing.btn.cy);
+        const dPause = Math.abs(g.playing.pause.cy - g.playing.btn.cy);
+        return dPlay <= 0.6 && dPause <= 0.6 && Math.abs(g.transport.diff) <= 0.6;
+      })()],
+      ['6b 锁定词呈禁用态', obj['6b 低级别词呈禁用态'] && obj['6b 低级别词呈禁用态'].lockedCount > 10
+        && obj['6b 低级别词呈禁用态'].allNotAllowed === true],
+      ['6b2 点锁定词不弹面板', obj['6b2 点锁定词无反应'] && obj['6b2 点锁定词无反应'].panelVisible === false
+        && obj['6b2 点锁定词无反应'].apiCallsDelta === 0],
       ['2b 进度条拖动到 50%', obj['2b 拖动到 50%'] && obj['2b 拖动到 50%'].tUp > 20],
       ['3a 点字幕跳转（不回到开头）', obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'] && obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'].after > 30],
       ['4a 字幕菜单可用', obj['4a 字幕按钮与菜单'] && obj['4a 字幕按钮与菜单'].menuVisible],
