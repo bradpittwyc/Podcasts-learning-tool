@@ -32,13 +32,27 @@ function install(ctx) {
       return true;
     })()`);
 
-    out['1a 初始（应为播放图标 + paused）'] = await run('1a', `(() => ({
-      icon: document.getElementById('playIcon').getAttribute('d'),
-      paused: document.getElementById('video').paused,
-      trIcon: document.getElementById('trPlayIcon').getAttribute('d'),
-      miniIcon: document.getElementById('miniPlayIcon').getAttribute('d'),
-      playingClass: document.getElementById('stage').classList.contains('playing')
-    }))()`);
+    // 播放/暂停图标状态（用 visibility 切换，检查真实可见的图形）
+    const iconState = `(() => {
+      const vis = (el) => {
+        if (!el) return false;
+        const s = getComputedStyle(el);
+        return s.display !== 'none' && s.visibility !== 'hidden';
+      };
+      const btn = document.getElementById('btnPlay');
+      return {
+        bodyPlaying: document.body.classList.contains('is-playing'),
+        playVisible: vis(btn && btn.querySelector('.ic-play')),
+        pauseVisible: vis(btn && btn.querySelector('.ic-pause')),
+        trPauseVisible: vis(document.querySelector('#trPlay .ic-pause')),
+        miniPauseVisible: vis(document.querySelector('#miniPlay .ic-pause')),
+        playingClass: document.getElementById('stage').classList.contains('playing')
+      };
+    })()`;
+
+    out['1a 初始（应为三角 + paused）'] = await run('1a', `${iconState.replace('})()', '})()')}`);
+    out['1a'] = out['1a 初始（应为三角 + paused）'];
+    out['1a 初始'] = { ...out['1a'], paused: await js(`document.getElementById('video').paused`) };
 
     out['1a2 按钮可点击性'] = await run('1a2', `(() => {
       const btn = document.getElementById('btnPlay');
@@ -76,29 +90,33 @@ function install(ctx) {
       target.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true, composed: true, clientX: cx, clientY: cy, detail: 1, button: 0 }));
       await new Promise((r2) => setTimeout(r2, 1200));
       const v = document.getElementById('video');
+      const st = ${iconState};
       return {
         target: target.tagName + '.' + (typeof target.className === 'string' ? target.className : ''),
-        icon: document.getElementById('playIcon').getAttribute('d'),
-        trIcon: document.getElementById('trPlayIcon').getAttribute('d'),
-        miniIcon: document.getElementById('miniPlayIcon').getAttribute('d'),
-        paused: v.paused, currentTime: v.currentTime,
-        playingClass: document.getElementById('stage').classList.contains('playing'),
-        playCalls: window.__pltProbe.playCalls || []
+        ...st,
+        paused: v.paused, currentTime: v.currentTime
       };
     })()`);
 
-    out['1c 再点一次（应回到播放图标 + paused）'] = await run('1c', `(async () => {
+    out['1c 再点一次（应回到三角 + paused）'] = await run('1c', `(async () => {
       document.getElementById('btnPlay').click();
       await new Promise((r) => setTimeout(r, 900));
-      return { icon: document.getElementById('playIcon').getAttribute('d'),
-               paused: document.getElementById('video').paused,
-               playingClass: document.getElementById('stage').classList.contains('playing'),
-               playCalls: (window.__pltProbe.playCalls || []).slice(-2) };
+      const st = ${iconState};
+      return { ...st, paused: document.getElementById('video').paused };
     })()`);
 
-    out['1d 三个播放按钮图标是否一致'] = await run('1d', `(() => {
-      const d = (id) => document.getElementById(id).getAttribute('d');
-      return { playIcon: d('playIcon'), trPlayIcon: d('trPlayIcon'), miniPlayIcon: d('miniPlayIcon'), allEqual: d('playIcon') === d('trPlayIcon') && d('playIcon') === d('miniPlayIcon') };
+    out['1d 三个播放按钮图标是否同步'] = await run('1d', `(() => {
+      const vis = (sel) => {
+        const el = document.querySelector(sel);
+        if (!el) return 'missing';
+        return getComputedStyle(el).display !== 'none';
+      };
+      return {
+        btnPauseVisible: vis('#btnPlay .ic-pause'),
+        trPauseVisible: vis('#trPlay .ic-pause'),
+        miniPauseVisible: vis('#miniPlay .ic-pause'),
+        allSynced: vis('#btnPlay .ic-pause') === vis('#trPlay .ic-pause') && vis('#btnPlay .ic-pause') === vis('#miniPlay .ic-pause')
+      };
     })()`);
 
     // ───────── 2. 进度条拖动 ─────────
@@ -313,6 +331,50 @@ function install(ctx) {
       sbCostText: document.getElementById('sbCost').textContent,
       rawLookupShape: window.__lastLookupShape || null
     }))()`);
+
+    // ───────── 6. 级别锁定（低于所选级别的词不可取词）─────────
+    out['6a 锁定按钮'] = await run('6a', `(async () => {
+      const btn = document.getElementById('btnLockLevel');
+      const before = { locked: btn.classList.contains('locked'), title: btn.getAttribute('title') };
+      btn.click();
+      await new Promise((r) => setTimeout(r, 900));
+      const s = await window.PLT.settings.get();
+      return {
+        before,
+        afterLocked: btn.classList.contains('locked'),
+        setting: s.lookup.lockLevel,
+        level: s.lookup.level,
+        ariaPressed: btn.getAttribute('aria-pressed')
+      };
+    })()`);
+
+    // 锁定时点击低级别词 → 应被拦截，不产生任何请求
+    out['6b 锁定后点低级别词'] = await run('6b', `(async () => {
+      const before = window.__pltSmoke.costStats();
+      // 先关闭词典面板，重新点一个明显低于托福级别的词（如 heritage / thrive）
+      document.getElementById('dictPanel').classList.add('hidden');
+      document.getElementById('paneBody').classList.remove('dict-open');
+      const spans = [...document.querySelectorAll('#transcript .w')];
+      const target = spans.find((s) => ['heritage', 'thrive', 'fragile', 'nutrients'].includes(s.dataset.lower)) || spans[0];
+      target.click();
+      await new Promise((r) => setTimeout(r, 2200));
+      const after = window.__pltSmoke.costStats();
+      return {
+        clicked: target.dataset.lower,
+        panelVisible: !document.getElementById('dictPanel').classList.contains('hidden'),
+        body: document.getElementById('dictBody').textContent.replace(/\\s+/g, ' ').slice(0, 200),
+        tags: [...document.querySelectorAll('#dictTags .tag')].map((t) => t.textContent),
+        apiCallsDelta: after.calls - before.calls
+      };
+    })()`);
+
+    // 解锁，恢复默认
+    out['6c 解锁'] = await run('6c', `(async () => {
+      document.getElementById('btnLockLevel').click();
+      await new Promise((r) => setTimeout(r, 800));
+      const s = await window.PLT.settings.get();
+      return { lockLevel: s.lookup.lockLevel, btnLocked: document.getElementById('btnLockLevel').classList.contains('locked') };
+    })()`);
 
     return out;
   };

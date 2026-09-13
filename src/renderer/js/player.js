@@ -374,20 +374,18 @@
     };
     player.on('state', paintMute);
 
-    // 播放按钮图标
-    const icons = {
-      play: 'M6 4.5v11l10-5.5-10-5.5Z',
-      pause: 'M6 4.5h3v11H6zM11 4.5h3v11h-3z'
-    };
+    // 播放状态图标：暂停时显示三角，播放中显示两道竖（用 CSS 类切换，避免内联 d 属性出错）
     const paintPlay = (playing) => {
-      const d = playing ? icons.pause : icons.play;
-      for (const id of ['playIcon', 'trPlayIcon', 'miniPlayIcon']) {
-        const node = document.getElementById(id);
-        if (node) node.setAttribute('d', d);
+      document.body.classList.toggle('is-playing', !!playing);
+      const stage = document.getElementById('stage');
+      if (stage) stage.classList.toggle('playing', !!playing);
+      for (const id of ['trPlay', 'miniPlay']) {
+        const el = document.getElementById(id);
+        if (el) el.classList.toggle('playing', !!playing);
       }
-      document.getElementById('stage').classList.toggle('playing', playing);
     };
     player.on('state', (s) => paintPlay(s.playing));
+    paintPlay(player.playing);
 
     const toggle = () => player.toggle();
     $('#btnPlay').addEventListener('click', toggle);

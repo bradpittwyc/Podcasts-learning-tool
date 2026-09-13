@@ -30,14 +30,17 @@ const DEFAULT_SETTINGS = {
   lookup: {
     level: 'toefl',              // none | ielts | toefl | gre | educated_native
     filterMode: 'at-or-above',   // at-or-above | exact | ai-judge
-    showAllOnClick: true,        // 手动点击单词时忽略难度过滤
+    lockLevel: false,            // 锁定：低于所选级别的单词不可取词
+    showAllOnClick: true,        // 未锁定时，手动点击仍可查低级别词（走本地词典）
     explainInChinese: true,
     cacheEnabled: true,
     autoScan: true,              // 加载字幕后自动批量分级
     autoScanLimit: 400,          // 自动扫描的最大行数（控制 token 消耗）
     maxWordsPerRequest: 40,
     pronounce: 'us',             // us | uk | none
-    contextChars: 160
+    contextChars: 160,
+    localDict: true,             // 优先使用离线本地词典（0 费用）
+    llmForContext: true          // 仅当本地词典命中但需要语境/背景时追加 AI 分析
   },
   // ── 播放器 ───────────────────────────────────────────────────
   player: {

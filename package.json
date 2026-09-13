@@ -30,6 +30,8 @@
     "test:ocr": "node scripts/ocr-selftest.js",
     "sample": "node scripts/make-sample.js",
     "icon": "node scripts/make-icon.js",
+    "dict": "node scripts/build-dict.js",
+    "dict:fetch": "node scripts/build-dict.js --fetch",
     "fix-bom": "node scripts/fix-ps1-bom.js"
   },
   "devDependencies": {
@@ -58,6 +60,10 @@
       {
         "from": "scripts/ui-probe.js",
         "to": "ui-probe.js"
+      },
+      {
+        "from": "resources/local-dict.json.gz",
+        "to": "local-dict.json.gz"
       }
     ],
     "win": {

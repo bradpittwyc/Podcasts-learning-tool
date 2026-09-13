@@ -16,6 +16,7 @@ const { pathToFileURL } = require('url');
 const store = require('./store');
 const subs = require('../renderer/js/subtitles'); // 主/渲染共用的字幕引擎（单一实现）
 const llm = require('./llm');
+const localDict = require('./local-dict');
 const ocr = require('./ocr');
 const screenText = require('./screen-text');
 
@@ -693,8 +694,8 @@ function registerIpc() {
       list.sort((a, b) => (Number(b.matched) - Number(a.matched)) || a.name.localeCompare(b.name, 'zh-CN', { numeric: true }));
     }
 
-    // 2) 指定目录（递归）
-    if (dir) {
+    // 2) 指定目录（递归）—— 去重，避免与同目录结果重复
+    if (dir && dir.toLowerCase() !== (mediaPath ? path.dirname(mediaPath).toLowerCase() : '')) {
       try {
         const rows = scanFolder(dir);
         for (const s of (rows.subtitles || [])) push(s.path, {});
@@ -710,10 +711,27 @@ function registerIpc() {
     return subs.saveSubtitleFile(targetPath, cues, { bilingual: true });
   });
 
+  // ── 离线本地词典（0 费用）──
+  ipcMain.handle('dict:stats', () => localDict.stats());
+  ipcMain.handle('dict:lookup', (_e, payload) => {
+    const { requests, options } = payload || {};
+    try {
+      return { ok: true, ...localDict.lookupBatch(requests || [], options || {}) };
+    } catch (err) {
+      return { ok: false, error: err.message };
+    }
+  });
+
   // ── 大模型取词 ──
   ipcMain.handle('llm:lookup', async (_e, payload) => {
     try {
       const { requests, options } = payload || {};
+      const s = store.settings();
+      const useLocal = options && options.localDict !== undefined ? !!options.localDict : !!s.get('lookup.localDict', true);
+      // 默认走「本地优先 + 只对难词调用 AI」的分级路由
+      if (useLocal && !(options && options.noLocal)) {
+        return await llm.lookupTiered(requests || [], options || {});
+      }
       const res = await llm.lookupBatch(requests || [], options || {});
       return { ok: true, ...res };
     } catch (err) {
@@ -723,10 +741,38 @@ function registerIpc() {
   ipcMain.handle('llm:lookupWord', async (_e, payload) => {
     try {
       const { word, context, options } = payload || {};
-      const res = await llm.lookupBatch([{ word, context }], { ...(options || {}), force: true, applyLevelFilter: false });
+      const s = store.settings();
+      const levelId = (options && options.level) || s.get('lookup.level', 'toefl');
+      const lockLevel = s.get('lookup.lockLevel', false);
+      const useLocal = s.get('lookup.localDict', true);
+      const force = !!(options && options.force);
+
+      // ① 本地词典优先
+      const hit = useLocal ? localDict.get(word) : null;
+      if (hit) {
+        const atLevel = localDict.meetsTier(hit, levelId);
+        const expanded = localDict.lookupBatch([{ word, context }], { level: levelId, lockLevel: false }).entries[String(word).toLowerCase()];
+        if (!atLevel && lockLevel && !force) {
+          return { ok: true, entry: null, blocked: true, reason: 'below-level-locked', cefr: expanded ? expanded.cefr : '', toApi: 0, fromCache: 0 };
+        }
+        // 难词且需要语境 → 追加 AI 分析；否则直接用本地释义（0 费用）
+        const wantAi = force || (atLevel && s.get('lookup.llmForContext', true) && localDict.needsContext(hit));
+        if (!wantAi) {
+          return { ok: true, entry: expanded, toApi: 0, fromCache: 0, source: 'local' };
+        }
+        const tier = await llm.lookupTiered([{ word, context }], { level: levelId, lockLevel, force: true });
+        const key = String(word).toLowerCase();
+        const entry = tier.entries[key] || expanded;
+        return { ok: true, entry, toApi: tier.stats.aiCalls, fromCache: tier.stats.aiSkippedByCache, usage: tier.usage, source: entry ? entry.source : 'local' };
+      }
+
+      // ② 本地没有 → 大模型（仍遵守级别锁定）
+      const tier = await llm.lookupTiered([{ word, context }], { level: levelId, lockLevel, localDict: false });
       const key = String(word).toLowerCase();
-      // 透传用量统计（渲染进程要据此显示 token / 费用）
-      return { ok: true, entry: res.entries[key] || null, toApi: res.toApi, fromCache: res.fromCache, usage: res.usage, ms: res.ms };
+      if (tier.blocked && tier.blocked[key]) {
+        return { ok: true, entry: null, blocked: true, reason: 'below-level-locked', toApi: 0, fromCache: 0 };
+      }
+      return { ok: true, entry: tier.entries[key] || null, toApi: tier.stats.aiCalls, fromCache: tier.stats.aiSkippedByCache, usage: tier.usage, source: 'ai' };
     } catch (err) {
       return { ok: false, code: err.code || 'ERROR', error: err.message, partial: err.partial || null };
     }
@@ -742,7 +788,49 @@ function registerIpc() {
   ipcMain.handle('llm:scanTranscript', async (_e, payload) => {
     try {
       const { cues, options } = payload || {};
-      return { ok: true, ...(await llm.scanTranscript(cues || [], options || {})) };
+      const opts = options || {};
+      const s = store.settings();
+      const useLocal = s.get('lookup.localDict', true);
+      if (!useLocal) return { ok: true, ...(await llm.scanTranscript(cues || [], opts)) };
+
+      // 本地词典扫描：0 费用、毫秒级；只有「本地没有 / 需要语境」的词才交给 AI
+      const levelId = opts.level || s.get('lookup.level', 'toefl');
+      const lockLevel = !!s.get('lookup.lockLevel', false);
+      const limit = Math.max(1, Math.min(Number(opts.limit || s.get('lookup.autoScanLimit', 400)), 4000));
+      const slice = (cues || []).slice(0, limit);
+      const seen = new Map();
+      for (const cue of slice) {
+        const text = cue.en || cue.text || '';
+        for (const w of subs.extractCandidates(text)) {
+          if (!seen.has(w.lower)) seen.set(w.lower, { word: w.word, context: text });
+        }
+      }
+      const list = [...seen.values()];
+      const t0 = Date.now();
+      const res = await llm.lookupTiered(list, {
+        level: levelId,
+        lockLevel,
+        onlyLocal: opts.onlyLocal === true || opts.noAi === true,
+        topic: opts.topic
+      });
+      return {
+        ok: true,
+        entries: res.entries,
+        skipped: res.skipped,
+        below: res.below,
+        blocked: res.blocked,
+        scannedLines: slice.length,
+        uniqueWords: list.length,
+        level: levelId,
+        localHits: res.stats.localHits,
+        llmWords: res.stats.llmWords,
+        blockedCount: res.stats.blocked,
+        toApi: res.stats.aiCalls,
+        fromCache: res.stats.aiSkippedByCache,
+        usage: res.usage,
+        ms: Date.now() - t0,
+        engine: 'local+ai'
+      };
     } catch (err) {
       return { ok: false, code: err.code || 'ERROR', error: err.message };
     }
@@ -1124,8 +1212,10 @@ function runSmokeTest() {
           const p = probeMod.install({ js, log, wait: (ms) => new Promise((r) => setTimeout(r, ms)) });
           const res = await p.probe();
           log('UI 探测结果：' + JSON.stringify(res, null, 1));
-          uiOk = !!(res['1b 真实坐标点击播放按钮'] && res['1b 真实坐标点击播放按钮'].icon
+          uiOk = !!(res['1b 真实坐标点击播放按钮'] && res['1b 真实坐标点击播放按钮'].pauseVisible
             && res['1b 真实坐标点击播放按钮'].paused === false
+            && res['1c 再点一次（应回到三角 + paused）'] && res['1c 再点一次（应回到三角 + paused）'].playVisible
+            && res['1c 再点一次（应回到三角 + paused）'].paused === true
             && res['2b 拖动到 50%'] && res['2b 拖动到 50%'].tUp > 20
             && res['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'] && res['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'].after > 30
             && res['4a 字幕按钮与菜单'] && res['4a 字幕按钮与菜单'].menuVisible);

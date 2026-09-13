@@ -83,6 +83,11 @@ contextBridge.exposeInMainWorld('PLT', {
     clearCache: () => invoke('llm:clearCache')
   },
 
+  dict: {
+    stats: () => invoke('dict:stats'),
+    lookup: (requests, options) => invoke('dict:lookup', { requests, options })
+  },
+
   screen: {
     captureSelection: () => invoke('screen:captureSelection'),
     captureSources: () => invoke('screen:captureSources'),

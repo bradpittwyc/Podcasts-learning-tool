@@ -20,8 +20,9 @@
 | **校对** | 软件内直接改文本与时间戳、拆分 / 合并 / 插入 / 删除、整篇平移、一键保存 SRT/VTT/JSON |
 | **跳转** | 点击任意字幕行或单词 → 视频/音频立即跳到对应时间戳 |
 | **文字界面** | 英文 **Times New Roman**，中文 **微软雅黑**，界面 **Segoe UI Variable**（可自定义） |
-| **取词查词典** | 点单词 / 悬停 / 屏幕取词 → 中文释义 + 英文释义 + 音标 + 例句 + 语境 |
-| **难度分级** | **雅思 / 托福 / GRE / Educated Native**（受过良好教育的母语级）等 8 档，**只翻译目标级别及以上的词**（省钱） |
+| **取词查词典** | 点单词 → 中文释义 + 音标 + 词性 + 语境；**内置 9 万词离线词典，常见词 0 费用** |
+| **难度分级** | **雅思 / 托福 / GRE / Educated Native**（受过良好教育的母语级）等 8 档，**只标出目标级别及以上的词** |
+| **级别锁定** | 顶栏 🔒 一键锁定：低于所选级别的单词**不可取词**（不显示释义、不调用 AI） |
 | **屏幕取词** | ① 截图框选 + **Windows 内置 OCR**（离线、免费）② 抓取前台程序选中文字 ③ 全局快捷键 `Alt+Shift+W` |
 | **跟读** | 麦克风录音、A/B 对比播放、原句后留跟读间隔、单句循环、**A-B 复读**、录音保存 |
 | **生词本** | 一键收藏、搜索排序、闪卡复习、导出 CSV / JSON（可直接导入 Anki / 欧路） |
@@ -59,7 +60,7 @@ npm run dist:portable   # 只出便携版
 
 ---
 
-## 🔑 配置大模型（查词功能）
+## 🔑 配置大模型（可选 — 只有生僻词才需要）
 
 打开应用 → 右上角 **⚙ 设置 → 大模型**：
 
@@ -68,8 +69,9 @@ npm run dist:portable   # 只出便携版
 3. 点 **测试连接** —— 显示 `✓ 连接成功` 即可
 4. 也支持任何 **OpenAI 兼容**接口：OpenAI / Moonshot / 通义千问 / 智谱 / SiliconFlow，以及**本地 Ollama**（`http://localhost:11434/v1`，完全免费离线）
 
+> **不配置 Key 也能用**：播放、字幕、校对、跟读、生词本、本地词典分级取词、全文难词扫描全部可用，
+> 只有「本地词典未收录的生僻词」会提示需要 Key。
 > API Key 使用 Windows DPAPI（Electron `safeStorage`）加密后保存在本地，绝不上传到本项目以外的任何地方。
-> 不配置 Key 时，播放、字幕、校对、跟读、生词本功能**全部可用**，只是不能自动翻译。
 
 ---
 
@@ -90,40 +92,58 @@ npm run dist:portable   # 只出便携版
 
 ---
 
-## 💰 分级取词是怎么省钱的
+## 💰 两级取词：本地词典免费，AI 只用在刀刃上
 
-这是本项目的核心设计。传统「点读」工具会给**每一个词**都生成释义，token 消耗巨大。本工具把「哪些词值得花钱」交给大模型一次性批量判断：
+这是本项目的核心设计。**绝大多数常见词根本不需要大模型** —— 软件内置了一份离线词典，
+只有真正难的词才交给 AI 结合语境解释。
 
 ```
-TARGET_LEVEL=TOEFL (C1)
-material: "The committee's decision was met with widespread opprobrium."
-                                                      ↑ 只在目标级别以上的词上花钱
-→ the / committee / decision / met / with / was   → shouldExplain = false（跳过，0 释义 token）
-→ opprobrium (C2, GRE, rare)                       → shouldExplain = true（生成释义）
+输入：The expedition relied on meticulous planning.
+                      ↓                    ↓
+              expedition (B1)        meticulous (B2/TOEFL)
+                      ↓                    ↓
+        本地词典直接给释义（0 费用）   超过所选级别 → 交给 AI 结合语境解释
 ```
 
-省钱的四层机制：
+### 三层机制
 
-1. **难度闸门**：低于目标级别的常用词直接跳过，不生成释义（`shouldExplain:false`）
-2. **批量合并**：一屏内的候选词合成 **一次** 请求（默认 24 词/次，可调 4~60）
-3. **本地永久缓存**：同一个词 + 语境只付费一次（`cache/dictionary-cache.json`，LRU 20000 条）
-4. **免费 OCR**：屏幕取词用 Windows 内置 OCR，不走视觉大模型
+1. **内置离线词典**（ECDICT 精简版，**90,754 词条 / 2.7 MB gzip**，加载约 120ms）
+   - 含音标、词性、中文释义、**CEFR 级别**、雅思/托福/GRE 标签
+   - 支持词形还原（walls → wall、studied → study、catalogued → catalogue）
+   - 查表是 O(1) 内存操作，**毫秒级、完全离线、0 费用**
+2. **难度闸门**：低于所选级别的词不会被当作难词，点了也只用本地词典
+3. **AI 只处理「本地没有 / 需要语境」的词**：生僻词、学术词、超长多义词、本地未收录词
 
-实测参考：一集 30 分钟播客（约 1200 行字幕），按「托福及以上」取词，首次全文扫描约 **¥0.05 ~ 0.2**；同一个视频第二次打开，命中缓存**花费为 0**。
-状态栏右下角实时显示本会话请求次数、token 数与估算费用。
+实测（本仓库自带样例，托福级别，空缓存）：
+
+| 场景 | 结果 |
+| --- | --- |
+| 全文扫描 121 个不同单词 | **0 次 API 请求、0 tokens、¥0.0000**（全部本地词典命中） |
+| 点 `squander` | 本地释义 + 音标 + B2/TOEFL/GRE 标签，**0 费用** |
+| 点本地未收录的生僻词 | 才调用 AI（一次约 700 tokens，约 ¥0.0001），结果永久缓存 |
+
+> 想要「完全离线、一分钱不花」：设置 → 取词级别 → 关闭「对需要语境的词追加 AI 分析」。
+> 此时即使不填 API Key，分级取词、全文扫描、点词查义也全部可用。
 
 ### 级别一览
 
 | 选项 | 对应难度 | 说明 |
 | --- | --- | --- |
-| 不筛选 | — | 全部单词都翻译（最贵） |
-| A2 / B1 / B2 | CEFR 基础档 | 按 CEFR 排序过滤 |
-| **雅思 IELTS** | C1 | 雅思 6.5+ 核心词及以上 |
+| 不筛选 | — | 全部单词都解释 |
+| A2 / B1 / B2 | CEFR 基础档 | 按词频推导的 CEFR 级别过滤 |
+| **雅思 IELTS** | C1 | 雅思核心词及以上 |
 | **托福 TOEFL** | C1 | 托福核心学术词及以上 |
-| **GRE** | C2 | GRE 高阶词库 |
-| **Educated Native** | C2+ | 受过良好教育的母语者书面语、文化典故级难词 |
+| **GRE** | C2 | GRE 高阶词 |
+| **Educated Native** | C2+ | 生僻词、文学/专业级难词 |
 
-过滤模式可选「级别及以上」（默认）／「仅该级别」／「交给大模型判断」（结合上下文更准，稍贵）。
+### 🔒 级别锁定
+
+顶栏「取词级别」右侧的锁形按钮（或设置 → 取词级别）：
+
+- **未锁定（默认）**：点任意单词都能查 —— 低于级别的词只用本地词典，**不产生 AI 费用**
+- **已锁定**：低于所选级别的单词**直接拦截**，不显示释义、不调用 AI，面板明确提示
+
+适合「只想看托福以上难词」的沉浸式学习：锁定后点错词也不会泄漏答案、不会花钱。
 
 ---
 
@@ -214,10 +234,15 @@ src/
 scripts/
   ocr.ps1                Windows OCR 实现（含 WinRT 异步桥接，UTF-8 with BOM）
   ocr-selftest.js        OCR 链路自检（生成测试图 → 识别 → 断言）
+  build-dict.js          用 ECDICT 生成内置离线词典（npm run dict / dict:fetch）
+  ui-probe.js            UI 交互回归探测（播放图标/拖动/跳转/字幕菜单/锁定/查词）
+  analyze-trace.js       解析冒烟 trace 并打印断言明细
   make-icon.js           纯 JS 生成多尺寸 ICO 图标
   make-sample.js         用 ffmpeg 生成示例媒体与中英字幕
   fix-ps1-bom.js         为 .ps1 补 UTF-8 BOM（PowerShell 5.1 必需）
   selftest.js            无界面自检（字幕解析 / 编码 / 分级逻辑 / 语法 / 结构）
+src/shared/lemma.js      词形还原规则（构建词典与运行时共用）
+resources/               内置离线词典（npm run dict 生成，不入库）
 ```
 
 ---
@@ -227,6 +252,8 @@ scripts/
 ```powershell
 npm test          # 128 项无界面自检
 npm run test:ocr  # 验证 Windows OCR 链路（生成图片→识别→校验文本）
+npm run dict:fetch # 下载 ECDICT 原始数据（63MB，仅首次）
+npm run dict      # 生成内置离线词典 resources/local-dict.json(.gz)
 npm run sample    # 用 ffmpeg 生成 60 秒示例视频/音频/中英字幕到 samples\
 npm run smoke     # 真实启动应用，加载示例、截图、检查播放与字幕同步（需先 npm run sample）
 ```
@@ -237,7 +264,18 @@ UTF-8/UTF-16/GBK 编码嗅探、正文分词与词形还原、级别分级判定
 `npm run smoke` 会真实启动 Electron 窗口，验证：自定义 `plt-media://` 协议能否播放 MP4（时长/解码/跳转）、
 同名字幕自动配对、24 行字幕渲染、快捷键与进度条联动，并在 `samples\` 下输出三张截图（整窗 / 文字区 1:1 / 词典面板）。
 
-> 打包前的完整验证流程：`npm test` → `npm run test:ocr` → `npm run sample` → `npm run smoke` → `npm run dist`
+加上 `--smoke-ui` 会额外用**真实鼠标事件**驱动界面做交互断言（`scripts/ui-probe.js`）：
+
+| 断言 | 说明 |
+| --- | --- |
+| 暂停态显示三角 / 播放中显示两道竖 | 三个播放按钮（命令栏 / 传输栏 / 悬浮条）同步切换 |
+| 进度条 pointerdown→move→up 拖到 50% | 断言 `currentTime ≈ 30s` |
+| 点第 24 / 12 行字幕 | 断言跳到 57.65s / 27.65s，且单击不自动播放 |
+| 字幕菜单内容 / 切换 / 关闭 / 恢复 | 点击后立刻生效 |
+| 🔒 锁定后点低级别词 | 断言被拦截且 **API 调用增量 = 0** |
+| 点词出释义 | 断言面板内容与来源徽标（本地词典 / AI 语境） |
+
+> 打包前的完整验证流程：`npm test` → `npm run test:ocr` → `npm run dict` → `npm run sample` → `npm run smoke -- --smoke-ui` → `npm run dist`
 
 ---
 

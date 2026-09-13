@@ -528,9 +528,99 @@ async function scanTranscript(cues, options = {}) {
   };
 }
 
-/** 连通性 / API Key 自检 */
-async function testConnection() {
+// ─────────────────────────────────────────────────────────────
+// 分级取词总入口：本地词典优先，只有「难词 / 需要背景知识」才调用大模型
+// ─────────────────────────────────────────────────────────────
+const localDict = require('./local-dict');
+
+/**
+ * @param {Array<{word:string, context?:string}>} requests
+ * @param {object} options { level, lockLevel, force, localDict, llmForContext, topic, onlyLocal }
+ */
+async function lookupTiered(requests, options = {}) {
   const s = settings();
+  const levelId = options.level || s.get('lookup.level', 'toefl');
+  const lockLevel = options.lockLevel !== undefined ? !!options.lockLevel : !!s.get('lookup.lockLevel', false);
+  const useLocal = options.localDict !== undefined ? !!options.localDict : !!s.get('lookup.localDict', true);
+  const llmForContext = options.llmForContext !== undefined ? !!options.llmForContext : !!s.get('lookup.llmForContext', true);
+  const list = (requests || []).map((r) => ({ word: String(r.word || '').trim(), context: r.context || '' })).filter((r) => r.word);
+
+  const result = {
+    ok: true,
+    level: levelId,
+    locked: lockLevel,
+    entries: {},          // 有释义（本地或 AI）
+    below: {},            // 低于级别：锁定则不可取词；未锁定则带本地释义
+    blocked: {},          // 锁定拦截
+    skipped: {},
+    stats: {
+      requested: list.length, localHits: 0, llmWords: 0, blocked: 0,
+      aiCalls: 0, aiSkippedByCache: 0, localOnly: 0
+    },
+    usage: null,
+    ms: 0
+  };
+  if (!list.length) return result;
+
+  // ① 本地词典分级
+  const local = useLocal
+    ? localDict.lookupBatch(list, { level: levelId, lockLevel, llmForContext })
+    : { entries: {}, skipped: {}, below: {}, needLlm: list.map((r) => ({ ...r, reason: 'local-disabled' })), stats: { localHits: 0, blocked: 0, needLlm: list.length, total: list.length } };
+
+  Object.assign(result.entries, local.entries);
+  Object.assign(result.below, local.below);
+  result.stats.localHits = local.stats.localHits;
+  result.stats.blocked = local.stats.blocked;
+
+  // ② 只对「需要 AI」的词调用大模型；锁定时低级别词已在本地被拦下
+  const needLlm = (local.needLlm || []).filter((r) => {
+    if (options.onlyLocal) return false;
+    if (lockLevel && local.below[r.word.toLowerCase()]) return false;
+    return true;
+  });
+  if (needLlm.length) {
+    const t0 = Date.now();
+    const aiRes = await lookupBatch(needLlm, {
+      level: levelId,
+      applyLevelFilter: false,     // 分级过滤已由本地词典完成
+      force: true,
+      batchSize: options.batchSize,
+      topic: options.topic
+    });
+    result.ms += Date.now() - t0;
+    result.stats.aiCalls += aiRes.toApi || 0;
+    result.stats.aiSkippedByCache += aiRes.fromCache || 0;
+    result.stats.llmWords = needLlm.length;
+    if (aiRes.usage) {
+      result.usage = result.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+      result.usage.prompt_tokens += aiRes.usage.prompt_tokens || 0;
+      result.usage.completion_tokens += aiRes.usage.completion_tokens || 0;
+      result.usage.total_tokens += aiRes.usage.total_tokens || 0;
+    }
+    // AI 结果覆盖本地（AI 有语境，质量更高）
+    for (const [k, v] of Object.entries(aiRes.entries || {})) {
+      result.entries[k] = { ...(result.entries[k] || {}), ...v, source: 'ai', needContext: false };
+    }
+    for (const [k, v] of Object.entries(aiRes.skipped || {})) {
+      const localEntry = result.entries[k];
+      if (localEntry) {
+        // 本地已有释义：保留，只标记 AI 认为不需要额外解释
+        localEntry.needContext = false;
+        continue;
+      }
+      result.skipped[k] = v;
+    }
+  }
+
+  // 统计：本地单独解决的词数（0 费用）
+  result.stats.localOnly = Object.values(result.entries).filter((e) => e && e.source === 'local').length;
+  const localBelow = Object.values(result.below).filter((b) => b && b.translation).length;
+  result.stats.localOnly += localBelow;
+  return result;
+}
+
+/** 连通性 / API Key 自检 */
+async function testConnection() {  const s = settings();
   const t0 = Date.now();
   try {
     const resp = await chatJSON([
@@ -559,6 +649,7 @@ module.exports = {
   tokenizeCandidates,
   lookupBatch,
   lookupWord,
+  lookupTiered,
   scanLine,
   scanTranscript,
   testConnection,

@@ -220,38 +220,63 @@
 
     renderLevel(form) {
       const s = this.settings;
-      form.appendChild(el('div', { class: 'section-title', text: '取词难度（省钱核心）' }));
+      form.appendChild(el('div', { class: 'section-title', text: '取词难度（核心省钱开关）' }));
       form.appendChild(this.field(
         '只解释该级别及以上的单词',
         this.select('lookup.level', [
-          { value: 'none', label: '不筛选（全部单词，最费 token）' },
+          { value: 'none', label: '不筛选（全部单词，最省事但也最费 token）' },
           { value: 'a2', label: 'A2 基础及以上' },
           { value: 'b1', label: 'B1 中级及以上' },
           { value: 'b2', label: 'B2 中高级及以上' },
-          { value: 'ielts', label: '雅思 IELTS（6.5+ 核心词）及以上' },
+          { value: 'ielts', label: '雅思 IELTS 核心词及以上' },
           { value: 'toefl', label: '托福 TOEFL 核心学术词及以上' },
           { value: 'gre', label: 'GRE 高阶词及以上' },
           { value: 'educated_native', label: 'Educated Native 受过良好教育的母语级' }
         ]),
-        '低于该级别的常用词（如 the / get / happy）不会被翻译，软件会直接跳过 —— 这是最省钱的一档开关。'
+        '低于该级别的常用词不会被当作“难词”高亮；点了也只用本地词典（0 费用），不会调用 AI。'
       ));
-      form.appendChild(this.field(
-        '过滤模式',
-        this.select('lookup.filterMode', [
-          { value: 'at-or-above', label: '级别及以上（推荐）' },
-          { value: 'exact', label: '仅该级别' },
-          { value: 'ai-judge', label: '交给大模型判断（更准，稍贵）' }
-        ]),
-        '「级别及以上」按 CEFR 难度排序过滤；「交给大模型判断」由模型结合上下文决定是否值得解释。'
+      form.appendChild(this.switchRow(
+        '🔒 锁定级别：低于所选级别的单词不可取词',
+        'lookup.lockLevel',
+        '开启后，点击低级别词会被直接拦截（不显示释义、不调用 AI）。顶栏级别选择器右侧的锁形按钮可随时切换。'
       ));
-      form.appendChild(this.switchRow('手动点击单词时忽略级别过滤', 'lookup.showAllOnClick', '想查哪个就查哪个（单次点击仍然只花一次极小的费用）'));
+
+      form.appendChild(el('div', { class: 'section-title', text: '离线本地词典（0 费用）' }));
+      const dictInfo = el('div', { class: 'skip-note' });
+      const paintDict = async () => {
+        const st = await window.PLT.dict.stats();
+        clear(dictInfo);
+        if (!st.loaded) {
+          dictInfo.appendChild(el('b', { text: '本地词典未加载：' }));
+          dictInfo.appendChild(document.createTextNode(st.error || '未知错误'));
+          return;
+        }
+        dictInfo.appendChild(el('b', { text: `已内置 ${st.size.toLocaleString()} 个词条` }));
+        dictInfo.appendChild(el('div', { class: 'muted small', style: { marginTop: '4px' }, html:
+          `数据来源：${U.escapeHtml(st.source || 'ECDICT')}<br>含音标、词性、中文释义、CEFR 级别与雅思/托福/GRE 标签；加载耗时 ${st.loadMs || 0}ms` }));
+      };
+      paintDict();
+      form.appendChild(dictInfo);
+      form.appendChild(this.switchRow(
+        '优先使用本地词典（强烈建议开启）',
+        'lookup.localDict',
+        '常见词直接在本地查，不产生任何费用；只有本地未收录、生僻、学术或多义的词才交给 AI 结合语境解释。'
+      ));
+      form.appendChild(this.switchRow(
+        '对“需要语境”的词追加 AI 分析',
+        'lookup.llmForContext',
+        '本地词典能给出释义，但不了解这句话里的具体含义（如专业术语、典故）。关闭后完全离线、0 费用。'
+      ));
+
+      form.appendChild(el('div', { class: 'section-title', text: '其他' }));
+      form.appendChild(this.switchRow('手动点击单词时忽略级别过滤', 'lookup.showAllOnClick', '仅当未开启“锁定级别”时有效：点低级别词仍走本地词典'));
       form.appendChild(this.switchRow('释义用中文', 'lookup.explainInChinese', '关闭后释义为纯英文'));
-      form.appendChild(this.switchRow('启用本地查词缓存', 'lookup.cacheEnabled', '同一个词在同一语境下只请求一次，永久复用'));
-      form.appendChild(this.switchRow('加载字幕后自动扫描全文难词', 'lookup.autoScan', '开启后打开字幕即自动标记难词并显示中文；关闭则只在点击时查询'));
+      form.appendChild(this.switchRow('启用 AI 查词缓存', 'lookup.cacheEnabled', 'AI 查过的词在同一语境下只付费一次'));
+      form.appendChild(this.switchRow('加载字幕后自动扫描全文难词', 'lookup.autoScan', '本地词典扫描是毫秒级且免费，建议开启'));
       form.appendChild(this.field(
         '自动扫描的最大行数',
         this.input('lookup.autoScanLimit', { type: 'number', min: 0, max: 4000, step: 20 }),
-        '控制首次扫描的 token 上限：只扫描前 N 行，其余在观看时按需查询。'
+        '本地扫描很快，一般无需限制；仅影响需要 AI 分析时的 token 上限。'
       ));
       form.appendChild(this.field('发音口音', this.select('lookup.pronounce', [
         { value: 'us', label: '美音' }, { value: 'uk', label: '英音' }, { value: 'none', label: '使用系统语音合成' }
@@ -261,14 +286,14 @@
       const paint = async () => {
         const stats = await window.PLT.llm.cacheStats();
         clear(info);
-        info.appendChild(el('b', { text: '本地词典缓存：' }));
+        info.appendChild(el('b', { text: 'AI 查词缓存：' }));
         info.appendChild(document.createTextNode(`已缓存 ${stats.total} 条（含释义 ${stats.explained} 条 / 跳过 ${stats.skipped} 条）`));
         info.appendChild(el('div', { class: 'muted small', text: stats.path, style: { marginTop: '4px', wordBreak: 'break-all' } }));
       };
       paint();
       form.appendChild(info);
       form.appendChild(el('button', {
-        class: 'cb-btn', text: '清空查词缓存',
+        class: 'cb-btn', text: '清空 AI 查词缓存',
         onclick: async () => {
           if (!await U.confirm('清空后再次查词会重新调用大模型（会产生费用），确定继续？')) return;
           await window.PLT.llm.clearCache();

@@ -39,3 +39,8 @@ desktop.ini
 *.local
 .env
 .env.*
+
+# 生成的离线词典（npm run dict 可重建，数据源 ECDICT）
+resources/local-dict.json
+resources/local-dict.json.gz
+.tmp-dict/

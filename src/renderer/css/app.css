@@ -76,15 +76,59 @@ button { cursor: default; border: none; background: none; }
 
 .status-dot {
   width: 8px; height: 8px; border-radius: 50%;
-  background: var(--text-disabled);
-  box-shadow: 0 0 0 3px transparent;
-  transition: background var(--dur-mid), box-shadow var(--dur-mid);
+  background: var(--text-3);
+  transition: background var(--dur-mid);
   margin-right: var(--sp-2);
+  flex: none;
 }
-.status-dot.ok { background: #3fb950; box-shadow: 0 0 0 3px rgba(63, 185, 80, .18); }
-.status-dot.busy { background: var(--lvl-b1); animation: pulse 1.1s ease-in-out infinite; }
-.status-dot.err { background: #e5534b; box-shadow: 0 0 0 3px rgba(229, 83, 75, .18); }
+/* 仅两种极克制的状态：就绪（清透绿） / 未配置（中性灰，不再刺眼红） */
+.status-dot.ok { background: #57c46a; }
+.status-dot.busy { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
+.status-dot.err { background: var(--text-3); }
 @keyframes pulse { 50% { opacity: .35; } }
+
+/* ── 播放/暂停图标交换（暂停时=三角，播放中=两道竖）──
+   采用 visibility 切换而非 display：不用和任何 display 规则比优先级，
+   图标始终占位，不会出现两个图形同时显示的错乱。 */
+#btnPlay svg, #trPlay svg, #miniPlay svg { display: block; fill: currentColor; }
+#btnSettings svg, .lock-btn svg { display: block; }
+
+#btnPlay .ic-pause, #trPlay .ic-pause, #miniPlay .ic-pause { visibility: hidden; }
+body.is-playing #btnPlay .ic-play,
+body.is-playing #trPlay .ic-play,
+body.is-playing #miniPlay .ic-play { visibility: hidden; }
+body.is-playing #btnPlay .ic-pause,
+body.is-playing #trPlay .ic-pause,
+body.is-playing #miniPlay .ic-pause { visibility: visible; }
+
+.lock-btn .ic-locked { visibility: hidden; }
+.lock-btn.locked .ic-unlocked { visibility: hidden; }
+.lock-btn.locked .ic-locked { visibility: visible; }
+
+/* 点击感：按下有明确回弹，不再“点了像没点” */
+.cb-icon, .tr-btn, .tr-btn.play, .cb-btn, .mini-btn, .ph-btn, .rate-chip, .lock-btn {
+  transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease,
+              transform 110ms cubic-bezier(.2, .9, .3, 1.2), box-shadow 140ms ease, color var(--dur-fast) ease;
+}
+.cb-icon:active, .tr-btn:active, .mini-btn:active, .ph-btn:active, .rate-chip:active, .lock-btn:active {
+  transform: scale(.9);
+}
+.cb-btn:active { transform: translateY(1px) scale(.975); }
+.tr-btn.play:active { transform: scale(.88); box-shadow: 0 1px 4px var(--accent-glow); }
+.tr-btn.play.playing { box-shadow: 0 0 0 3px var(--accent-glow), 0 2px 10px var(--accent-glow); }
+.cb-icon.big:active { transform: scale(.88); }
+
+/* 级别锁定按钮 */
+.lock-btn {
+  width: 24px; height: 24px;
+  display: grid; place-items: center;
+  border-radius: var(--radius-sm);
+  color: var(--text-3);
+  margin-left: 2px;
+}
+.lock-btn:hover { background: var(--bg-hover); color: var(--text-1); }
+.lock-btn.locked { color: var(--accent-2); background: var(--accent-light); }
+.lock-btn svg { width: 15px; height: 15px; }
 
 .wco { display: flex; height: var(--titlebar-h); -webkit-app-region: no-drag; }
 .wco-btn {

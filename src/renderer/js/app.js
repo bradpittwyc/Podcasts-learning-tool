@@ -97,6 +97,7 @@
       onSave: (entry, cue) => saveVocab(entry, cue),
       onSpeak: (word, mode) => window.PLTDict.speak(word, mode),
       pronounce: () => state.settings.lookup.pronounce,
+      levelLabel: () => levelLabelText(),
       onHide: () => paintMode()
     });
 
@@ -261,6 +262,34 @@
     const id = state.settings.lookup.level;
     const lv = lookup.levels.find((l) => l.id === id);
     $('#sbMode').textContent = lv ? `取词：${lv.short || lv.label}` : '';
+    paintLockButton();
+  }
+
+  function levelLabelText() {
+    const lv = lookup.levels.find((l) => l.id === state.settings.lookup.level);
+    return lv ? (lv.short || lv.label) : state.settings.lookup.level;
+  }
+
+  /** 级别锁定：锁定后低于所选级别的单词不可以取词（本地词典与 AI 都被拦下） */
+  async function toggleLevelLock(force) {
+    const next = force === undefined ? !state.settings.lookup.lockLevel : !!force;
+    await window.PLT.settings.patch({ lookup: { lockLevel: next } });
+    state.settings = await window.PLT.settings.get();
+    paintLockButton();
+    toast(next
+      ? `已锁定：低于「${levelLabelText()}」的单词不可取词`
+      : '已解锁：可点查任意单词（低级别词走本地词典，不产生 AI 费用）', 'ok', 4200);
+  }
+
+  function paintLockButton() {
+    const btn = $('#btnLockLevel');
+    if (!btn || !state.settings) return;
+    const locked = !!state.settings.lookup.lockLevel;
+    btn.classList.toggle('locked', locked);
+    btn.setAttribute('aria-pressed', String(locked));
+    btn.title = locked
+      ? `已锁定：低于「${levelLabelText()}」的单词不可取词 —— 点击解锁`
+      : `未锁定：可点查任意单词（低于「${levelLabelText()}」的词只用本地词典，不调用 AI）—— 点击锁定`;
   }
 
   function paintMode() {
@@ -336,6 +365,7 @@
     $('#miniSub').classList.toggle('on', !!state.settings.player.subtitleOverlay);
     $('#btnScanAll').addEventListener('click', () => autoScan({ silent: false, force: true }));
     $('#btnSettings').addEventListener('click', () => settingsPanel.open());
+    $('#btnLockLevel').addEventListener('click', () => toggleLevelLock());
 
     $('#trAB').addEventListener('click', () => {
       const res = player.cycleAB();
@@ -1149,8 +1179,11 @@
         phonetic: result.phonetic, pos: result.pos, enDef: result.enDef,
         example: result.example, exampleZh: result.exampleZh,
         isAcademic: result.isAcademic, isIdiom: result.isIdiom, rare: result.rare,
-        translation: result.translation
+        translation: result.translation, source: result.source
       });
+    } else if (res && res.blocked) {
+      // 级别锁定拦截：不高亮、不显示释义
+      transcript.setWord(word, { status: 'blocked', cefr: res.cefr || '' });
     }
     paintCost();
   }
@@ -1220,34 +1253,51 @@
   async function autoScan(opts) {
     const cues = transcript.getCues();
     if (!cues.length) { if (!(opts && opts.silent)) toast('没有字幕可扫描', 'warn'); return; }
-    if (!state.settings.llm.hasApiKey) {
-      if (!(opts && opts.silent)) toast('请先在设置里配置大模型 API Key', 'warn');
+    if (!state.settings.lookup.autoScan && !(opts && opts.force)) return;
+
+    // 本地词典模式：不需要 API Key，0 费用、毫秒级；AI 只处理「本地没有 / 需要语境」的少数难词
+    const useLocal = state.settings.lookup.localDict !== false;
+    const onlyLocal = !!(opts && opts.onlyLocal);
+    if (!useLocal && !state.settings.llm.hasApiKey) {
+      if (!(opts && opts.silent)) toast('请先在设置里配置大模型 API Key（或打开本地词典）', 'warn');
       return;
     }
-    if (!state.settings.lookup.autoScan && !(opts && opts.force)) return;
+
     const gen = ++levelWatchGeneration;
     const label = $('#scanLabel');
     label.textContent = '扫描中…';
     $('#btnScanAll').classList.add('on');
     const res = await lookup.scanAll(cues, {
       level: state.settings.lookup.level,
-      limit: state.settings.lookup.autoScanLimit
+      limit: state.settings.lookup.autoScanLimit,
+      onlyLocal
     });
     label.textContent = '扫描难词';
     $('#btnScanAll').classList.remove('on');
     if (gen !== levelWatchGeneration) return;
     if (!res) return;
+
     transcript.setWords(res.map);
     const hits = [...res.map.values()].filter((v) => v.status === 'hit').length;
     paintCost();
-    if (!(opts && opts.silent)) {
-      toast(`扫描完成：${res.stats.scannedLines} 行 / ${res.stats.uniqueWords} 个不同单词 → 标出 ${hits} 个达到「${lookup.levels.find((l) => l.id === state.settings.lookup.level)?.short || ''}」级别的难词`, 'ok', 5200);
-    } else if (hits) {
-      toast(`已自动标出 ${hits} 个难词（级别：${lookup.levels.find((l) => l.id === state.settings.lookup.level)?.label || ''}）`, 'ok');
-    }
-    if (res.stats.fromCache) {
-      $('#sbCost').title = `缓存命中 ${res.stats.fromCache} 个词，本次仅 ${res.stats.toApi} 次 API 请求`;
-    }
+
+    const s = res.stats || {};
+    const lvShort = lookup.levels.find((l) => l.id === state.settings.lookup.level)?.short || '';
+    const costInfo = s.usage
+      ? ` · AI 分析 ${s.llmWords || 0} 词/${s.usage.total_tokens} tokens（约 ¥${((s.usage.prompt_tokens || 0) * 0.14e-6 + (s.usage.completion_tokens || 0) * 0.28e-6).toFixed(4)}）`
+      : ' · 全程本地词典，0 费用';
+    const msg = `扫描完成：${s.scannedLines} 行 / ${s.uniqueWords} 个不同单词 → 标出 ${hits} 个「${lvShort}」及以上难词（本地命中 ${s.localHits || 0}）${costInfo}`;
+
+    if (!(opts && opts.silent)) toast(msg, 'ok', 6500);
+    else if (hits) toast(`已自动标出 ${hits} 个难词（${lvShort} 及以上）${s.usage ? '' : ' · 本地词典，0 费用'}`, 'ok', 5200);
+    if (s.blockedCount) toast(`级别锁定：拦截了 ${s.blockedCount} 个低于级别的词`, 'warn', 4200);
+
+    $('#sbCost').title = [
+      `本地词典命中：${s.localHits || 0} 词（免费）`,
+      `AI 分析：${s.llmWords || 0} 词`,
+      `API 请求：${s.toApi || 0} 次，缓存命中 ${s.fromCache || 0} 词`,
+      s.blockedCount ? `级别锁定拦截：${s.blockedCount} 词` : null
+    ].filter(Boolean).join('\n');
   }
 
   function paintCost() {

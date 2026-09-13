@@ -52,17 +52,18 @@
   --zh-size: calc(14px * var(--tr-scale, 1));
 }
 /* 词典面板打开时：正文让出空间，而不是被盖住 */
-.pane-body.dict-open .transcript { padding-right: calc(min(400px, 62%) + 8px); }
+.pane-body.dict-open .transcript { padding-right: calc(min(340px, 46%) + 8px); }
 .pane-body.dict-open .vocab-view,
-.pane-body.dict-open .history-view { padding-right: min(400px, 62%); }
+.pane-body.dict-open .history-view { padding-right: min(340px, 46%); }
 .transcript.auto-scroll-off { scroll-behavior: auto; }
 
-/* ── 单行 ── */
+/* ── 单行：时间戳独立成列，正文左对齐，间距舒展 ── */
 .cue {
   display: grid;
-  grid-template-columns: 54px 1fr;
-  gap: 4px;
-  padding: 7px 8px 7px 2px;
+  grid-template-columns: 52px minmax(0, 1fr);
+  column-gap: 12px;
+  align-items: start;
+  padding: 9px 10px 9px 2px;
   border-radius: var(--radius-md);
   border-left: 3px solid transparent;
   cursor: pointer;
@@ -78,11 +79,13 @@
 .cue-time {
   font-family: var(--font-mono);
   font-size: 10.5px;
+  line-height: 1.5;
   color: var(--text-3);
-  padding-top: 5px;
+  padding-top: 3px;
   text-align: right;
   font-variant-numeric: tabular-nums;
   user-select: none;
+  white-space: nowrap;
 }
 .cue.current .cue-time { color: var(--accent-2); font-weight: 600; }
 
@@ -92,38 +95,44 @@
 .cue-en {
   font-family: var(--font-en);
   font-size: var(--en-size);
-  line-height: 1.62;
+  line-height: 1.6;
   color: var(--text-1);
   letter-spacing: .15px;
-  word-break: break-word;
+  word-break: normal;
+  overflow-wrap: anywhere;
 }
 /* 中文：微软雅黑 */
 .cue-zh {
   font-family: var(--font-cn);
   font-size: var(--zh-size);
-  line-height: 1.66;
+  line-height: 1.7;
   color: var(--text-2);
-  margin-top: 3px;
+  margin-top: 5px;
   letter-spacing: .1px;
 }
 .cue-zh:empty { display: none; }
 .transcript.hide-zh .cue-zh { display: none; }
 
-/* ── 单词 ── */
+/* ── 单词：干净的高亮，不切割字形 ── */
 .w {
   cursor: pointer;
-  border-radius: var(--radius-xs);
-  padding: 0 1px;
-  transition: background var(--dur-fast), color var(--dur-fast), box-shadow var(--dur-fast);
+  border-radius: 4px;
+  padding: 0 2px;
+  margin: 0 -1px;
+  background: transparent;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+  transition: background var(--dur-fast), color var(--dur-fast);
 }
-.w:hover { background: var(--accent-light); color: var(--accent-2); box-shadow: inset 0 -2px 0 var(--accent); }
+.w:hover { background: var(--accent-light); color: var(--accent-2); }
+/* 达标难词：柔和底色（原来的内阴影会压住字形，看起来像文字重影，已去掉） */
 .w.hit {
   background: var(--hl-target);
-  box-shadow: inset 0 -1.5px 0 var(--hl-target-border);
+  box-shadow: none;
 }
-.w.hit:hover { color: var(--accent-2); }
+.w.hit:hover { background: var(--accent-light); }
 .w.queried { background: var(--hl-queried); }
-.w.active { background: var(--accent); color: var(--accent-text); box-shadow: none; }
+.w.active { background: var(--accent); color: var(--accent-text); }
 .w.loading {
   background: linear-gradient(90deg, var(--bg-subtle), var(--accent-light), var(--bg-subtle));
   background-size: 200% 100%;
@@ -247,6 +256,10 @@
 .tag.academic { background: color-mix(in srgb, var(--lvl-academic) 14%, transparent); color: var(--lvl-academic); }
 .tag.native { background: color-mix(in srgb, var(--lvl-native) 16%, transparent); color: var(--lvl-native); }
 .tag.cached { opacity: .8; }
+/* 释义来源徽标：本地词典（免费） / AI 语境（花 token） */
+.tag.local { background: color-mix(in srgb, #3fb950 16%, transparent); color: #2f9e44; border-color: color-mix(in srgb, #3fb950 36%, transparent); }
+.tag.ai { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 36%, transparent); }
+.tag.locked { background: color-mix(in srgb, var(--lvl-c1) 16%, transparent); color: var(--lvl-c1); }
 
 body[data-theme="dark"] .tag.b1 { color: var(--lvl-b1); }
 
@@ -254,7 +267,7 @@ body[data-theme="dark"] .tag.b1 { color: var(--lvl-b1); }
 .dict-panel {
   position: absolute;
   right: 0; top: 0; bottom: 0;
-  width: min(400px, 62%);
+  width: min(340px, 46%);
   display: flex; flex-direction: column;
   background: var(--bg-layer);
   border-left: 1px solid var(--stroke-2);

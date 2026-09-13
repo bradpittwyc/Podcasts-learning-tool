@@ -66,7 +66,10 @@
 
       <div class="cb-group">
         <button class="cb-icon" id="btnPrevLine" title="上一句 (Ctrl+←)"><svg viewBox="0 0 20 20"><path d="M15 5v10L7 10l8-5ZM5 5v10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-        <button class="cb-icon big" id="btnPlay" title="播放/暂停 (Space)"><svg viewBox="0 0 20 20" id="playIcon"><path d="M6 4.5v11l10-5.5-10-5.5Z" fill="currentColor"/></svg></button>
+        <button class="cb-icon big" id="btnPlay" title="播放/暂停 (Space)" aria-label="播放/暂停">
+          <svg viewBox="0 0 20 20" class="ic-play" aria-hidden="true"><path d="M6.4 4.2a.9.9 0 0 1 1.36-.77l7.4 4.8a.9.9 0 0 1 0 1.54l-7.4 4.8A.9.9 0 0 1 6.4 13.8z"/></svg>
+          <svg viewBox="0 0 20 20" class="ic-pause" aria-hidden="true"><rect x="5.4" y="4" width="3.5" height="12" rx="1.2"/><rect x="11.1" y="4" width="3.5" height="12" rx="1.2"/></svg>
+        </button>
         <button class="cb-icon" id="btnNextLine" title="下一句 (Ctrl+→)"><svg viewBox="0 0 20 20"><path d="M5 5v10l8-5-8-5ZM15 5v10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
         <button class="cb-icon" id="btnReplay" title="重播当前句 (Ctrl+R)"><svg viewBox="0 0 20 20"><path d="M4 10a6 6 0 1 1 1.8 4.3M4 10V6m0 4h4" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
         <button class="cb-icon" id="btnLoopLine" title="单句循环 (L)"><svg viewBox="0 0 20 20"><path d="M5 7h9a2 2 0 0 1 0 4H6a2 2 0 0 0 0 4h9M14 4l3 3-3 3M6 16l-3-3 3-3" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
@@ -94,12 +97,21 @@
         <div class="level-picker" id="levelPicker" title="取词难度：只翻译该级别及以上的单词（省钱）">
           <span class="level-label">取词级别</span>
           <select id="levelSelect" class="level-select"></select>
+          <button class="lock-btn" id="btnLockLevel" title="锁定：低于所选级别的单词不可取词" aria-pressed="false">
+            <svg viewBox="0 0 20 20" class="ic-unlocked" aria-hidden="true"><path d="M6 9V6.6a4 4 0 0 1 7.7-1.5" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="4.4" y="9" width="11.2" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+            <svg viewBox="0 0 20 20" class="ic-locked" aria-hidden="true"><path d="M6 9V6.6a4 4 0 0 1 8 0V9" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><rect x="4.4" y="9" width="11.2" height="8" rx="2" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+          </button>
         </div>
         <button class="cb-btn" id="btnScanAll" title="按当前级别扫描全文难词 (Ctrl+Shift+D)">
           <svg viewBox="0 0 20 20"><path d="M10 3.5l1.6 3.6 3.9.4-2.9 2.6.8 3.9L10 12.1 6.6 14l.8-3.9L4.5 7.5l3.9-.4L10 3.5Z" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"/></svg>
           <span id="scanLabel">扫描难词</span>
         </button>
-        <button class="cb-icon" id="btnSettings" title="设置 (Ctrl+,)"><svg viewBox="0 0 20 20"><circle cx="10" cy="10" r="2.6" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 2.6v2M10 15.4v2M17.4 10h-2M4.6 10h-2M15.2 4.8l-1.4 1.4M6.2 13.8l-1.4 1.4M15.2 15.2l-1.4-1.4M6.2 6.2 4.8 4.8" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg></button>
+        <button class="cb-icon" id="btnSettings" title="设置 (Ctrl+,)">
+          <svg viewBox="0 0 20 20" aria-hidden="true">
+            <path d="M8.6 2.2h2.8l.42 2.02c.5.16.97.38 1.4.66l1.86-.86 1.98 1.98-.86 1.86c.28.43.5.9.66 1.4l2.02.42v2.8l-2.02.42a6.6 6.6 0 0 1-.66 1.4l.86 1.86-1.98 1.98-1.86-.86c-.43.28-.9.5-1.4.66L11.4 18H8.6l-.42-2.02a6.6 6.6 0 0 1-1.4-.66l-1.86.86-1.98-1.98.86-1.86a6.6 6.6 0 0 1-.66-1.4L1.12 10.6V8.6l2.02-.42c.16-.5.38-.97.66-1.4l-.86-1.86 1.98-1.98 1.86.86c.43-.28.9-.5 1.4-.66z" fill="none" stroke="currentColor" stroke-width="1.35" stroke-linejoin="round"/>
+            <circle cx="10" cy="9.6" r="2.5" fill="none" stroke="currentColor" stroke-width="1.5"/>
+          </svg>
+        </button>
       </div>
     </div>
 
@@ -141,7 +153,10 @@
 
           <!-- 悬浮迷你控制条 -->
           <div class="mini-controls" id="miniControls">
-            <button class="mini-btn" id="miniPlay" title="播放/暂停"><svg viewBox="0 0 20 20"><path id="miniPlayIcon" d="M6 4.5v11l10-5.5-10-5.5Z" fill="currentColor"/></svg></button>
+            <button class="mini-btn" id="miniPlay" title="播放/暂停">
+              <svg viewBox="0 0 20 20" class="ic-play" aria-hidden="true"><path d="M6.4 4.2a.9.9 0 0 1 1.36-.77l7.4 4.8a.9.9 0 0 1 0 1.54l-7.4 4.8A.9.9 0 0 1 6.4 13.8z"/></svg>
+              <svg viewBox="0 0 20 20" class="ic-pause" aria-hidden="true"><rect x="5.4" y="4" width="3.5" height="12" rx="1.2"/><rect x="11.1" y="4" width="3.5" height="12" rx="1.2"/></svg>
+            </button>
             <div class="mini-time" id="miniTime">00:00 / 00:00</div>
             <button class="mini-btn" id="miniSub" title="字幕开关">CC</button>
             <button class="mini-btn" id="miniShadow" title="跟读">🎙</button>
@@ -161,9 +176,16 @@
           <div class="transport-row">
             <div class="tr-left">
               <button class="tr-btn" id="trPrev" title="上一句"><svg viewBox="0 0 20 20"><path d="M15 5v10L7 10l8-5ZM5 5v10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-              <button class="tr-btn" id="trBack5" title="后退 5 秒"><svg viewBox="0 0 20 20"><path d="M4.5 10a5.5 5.5 0 1 1 1.7 4M4.5 10V6.4m0 3.6h3.6" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tiny">5</span></button>
-              <button class="tr-btn play" id="trPlay" title="播放/暂停"><svg viewBox="0 0 20 20" id="trPlayIcon"><path d="M6 4.5v11l10-5.5-10-5.5Z" fill="currentColor"/></svg></button>
-              <button class="tr-btn" id="trFwd5" title="前进 5 秒"><svg viewBox="0 0 20 20"><path d="M15.5 10a5.5 5.5 0 1 0-1.7 4M15.5 10V6.4m0 3.6H12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="tiny">5</span></button>
+              <button class="tr-btn" id="trBack5" title="后退 5 秒">
+                <svg viewBox="0 0 20 20"><path d="M9.6 4.6H15a4.4 4.4 0 0 1 0 8.8h-2.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M11.4 2.4 8.6 4.7l2.8 2.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+              <button class="tr-btn play" id="trPlay" title="播放/暂停">
+                <svg viewBox="0 0 20 20" class="ic-play" aria-hidden="true"><path d="M6.4 4.2a.9.9 0 0 1 1.36-.77l7.4 4.8a.9.9 0 0 1 0 1.54l-7.4 4.8A.9.9 0 0 1 6.4 13.8z"/></svg>
+                <svg viewBox="0 0 20 20" class="ic-pause" aria-hidden="true"><rect x="5.4" y="4" width="3.5" height="12" rx="1.2"/><rect x="11.1" y="4" width="3.5" height="12" rx="1.2"/></svg>
+              </button>
+              <button class="tr-btn" id="trFwd5" title="前进 5 秒">
+                <svg viewBox="0 0 20 20"><path d="M10.4 4.6H5a4.4 4.4 0 0 0 0 8.8h2.2" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/><path d="M8.6 2.4l2.8 2.3-2.8 2.3" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
               <button class="tr-btn" id="trNext" title="下一句"><svg viewBox="0 0 20 20"><path d="M5 5v10l8-5-8-5ZM15 5v10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
             </div>
 
