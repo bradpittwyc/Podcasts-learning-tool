@@ -170,18 +170,18 @@ function expand(entry, levelId) {
 }
 
 /**
- * 分级批量查询：本地词典 + 级别判定 + 锁定过滤
+ * 分级批量查询：本地词典 + 级别判定
+ * 本地词典只负责「分级筛选」——决定哪些词达到所选级别（可被标记为难词）。
+ * 释义一律由大模型在点选时生成，所以这里不做任何拦截。
  * @returns {{ entries, skipped, below, needLlm, stats }}
  */
 function lookupBatch(requests, options = {}) {
   const levelId = options.level || 'toefl';
-  const lock = !!options.lockLevel;
   const entries = {};
   const skipped = {};
-  const below = {};
+  const below = {};      // 低于目标级别的词（仍可点选，只是不作为「达标难词」标记）
   const needLlm = [];
   let localHits = 0;
-  let blocked = 0;
 
   for (const req of requests || []) {
     const word = String(req.word || '').trim();
@@ -195,17 +195,11 @@ function lookupBatch(requests, options = {}) {
     const atLevel = meetsTier(hit, levelId);
     const expanded = expand(hit, levelId);
     if (!atLevel) {
-      if (lock) {
-        blocked++;
-        below[key] = {
-          status: 'below', reason: 'locked', level: levelId,
-          cefr: expanded.cefr, examLevels: expanded.examLevels, translation: ''
-        };
-        continue;
-      }
-      // 未锁定：低级别词也给本地释义（0 费用），但不作为“难词”高亮
-      localHits++;
-      entries[key] = { ...expanded, belowLevel: true };
+      // 低于级别：记录下来（扫描时不计入「达标难词」），但绝不阻止点选
+      below[key] = {
+        status: 'below', reason: 'below-level', level: levelId,
+        cefr: expanded.cefr, examLevels: expanded.examLevels, translation: ''
+      };
       continue;
     }
     localHits++;
@@ -218,7 +212,7 @@ function lookupBatch(requests, options = {}) {
     }
   }
 
-  return { entries, skipped, below, needLlm, stats: { localHits, blocked, needLlm: needLlm.length, total: (requests || []).length } };
+  return { entries, skipped, below, needLlm, stats: { localHits, needLlm: needLlm.length, total: (requests || []).length } };
 }
 
 function stats() {

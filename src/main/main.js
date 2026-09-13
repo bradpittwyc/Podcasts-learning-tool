@@ -757,23 +757,15 @@ function registerIpc() {
       const { word, context, options } = payload || {};
       const s = store.settings();
       const levelId = (options && options.level) || s.get('lookup.level', 'toefl');
-      const lockLevel = s.get('lookup.lockLevel', false);
-      const force = !!(options && options.force);
 
-      // 级别锁定：本地有该词且低于所选级别时直接拦下（不产生任何请求）
-      if (lockLevel && !force && s.get('lookup.localDict', true)) {
-        const hit = localDict.get(word);
-        if (hit && !localDict.meetsTier(hit, levelId)) {
-          const expanded = localDict.lookupBatch([{ word, context }], { level: levelId, lockLevel: false }).entries[String(word).toLowerCase()];
-          return { ok: true, entry: null, blocked: true, reason: 'below-level-locked', cefr: expanded ? expanded.cefr : '', toApi: 0, fromCache: 0 };
-        }
-      }
-
-      const tier = await llm.lookupTiered([{ word, context }], { level: levelId, lockLevel: false, skipLocal: true, force: true });
+      // 所有单词都可点选查询，一律由大模型结合语境给释义
+      const tier = await llm.lookupTiered([{ word, context }], { level: levelId, skipLocal: true, force: true });
       const key = String(word).toLowerCase();
+      const entry = tier.entries[key] || null;
       return {
         ok: true,
-        entry: tier.entries[key] || null,
+        entry: entry && entry.noContent ? null : entry,
+        noContent: !!(entry && entry.noContent),
         toApi: tier.stats.aiCalls,
         fromCache: tier.stats.aiSkippedByCache,
         usage: tier.usage,
@@ -801,7 +793,6 @@ function registerIpc() {
 
       // 本地词典扫描：0 费用、毫秒级；只有「本地没有 / 需要语境」的词才交给 AI
       const levelId = opts.level || s.get('lookup.level', 'toefl');
-      const lockLevel = !!s.get('lookup.lockLevel', false);
       const limit = Math.max(1, Math.min(Number(opts.limit || s.get('lookup.autoScanLimit', 400)), 4000));
       const slice = (cues || []).slice(0, limit);
       const seen = new Map();
@@ -815,7 +806,6 @@ function registerIpc() {
       const t0 = Date.now();
       const res = await llm.lookupTiered(list, {
         level: levelId,
-        lockLevel,
         onlyLocal: opts.onlyLocal === true || opts.noAi === true,
         topic: opts.topic
       });
@@ -824,7 +814,6 @@ function registerIpc() {
         entries: res.entries,
         skipped: res.skipped,
         below: res.below,
-        blocked: res.blocked,
         partial: !!res.partial,
         aiError: res.aiError || null,
         scannedLines: slice.length,
@@ -832,7 +821,6 @@ function registerIpc() {
         level: levelId,
         localHits: res.stats.localHits,
         llmWords: res.stats.llmWords,
-        blockedCount: res.stats.blocked,
         toApi: res.stats.aiCalls,
         fromCache: res.stats.aiSkippedByCache,
         usage: res.usage,
@@ -1370,6 +1358,23 @@ function runSmokeTest() {
       }
 
       const ok = media.duration > 0 && media.error === null;
+      let llmPathOk = true;   // 未配置 Key 时跳过该项判定
+
+      // ── 单词查询通路回归：功能词（低于级别）与实词都必须能拿到释义 ──
+      if (hasKey) {
+        const one = await js(`(async () => {
+          const trim = (r) => ({
+            ok: r.ok, code: r.code, error: r.error, noContent: r.noContent,
+            toApi: r.toApi,
+            entry: r.entry ? { lemma: r.entry.lemma, cefr: r.entry.cefr, zh: r.entry.translation, en: r.entry.enDef, belowLevel: !!r.entry.belowLevel } : null
+          });
+          const a = await window.PLT.llm.lookupWord('the', 'the data revealed an unprecedented ecosystem', {});
+          const b = await window.PLT.llm.lookupWord('squander', 'We should not squander this fragile heritage.', {});
+          return { functionWord: trim(a), contentWord: trim(b) };
+        })()`).catch((e) => ({ error: e.message }));
+        log('【单词查询通路】' + JSON.stringify(one));
+        llmPathOk = !!(one && one.contentWord && one.contentWord.entry && one.contentWord.entry.zh);
+      }
 
       // ── 文件夹导入回归测试（覆盖「选择文件夹后打不开视频」这一路径）──
       let folderOk = true;
@@ -1397,11 +1402,11 @@ function runSmokeTest() {
         log('文件夹导入回归：跳过（未传 --smoke-folder）');
       }
 
-      log('结果：' + (ok && folderOk && uiOk ? 'PASS' : 'FAIL')
-        + `（媒体=${ok ? 'ok' : 'fail'}，文件夹导入=${folderOk ? 'ok' : 'fail'}，UI 交互=${uiOk ? 'ok' : 'fail'}）`);
+      log('结果：' + (ok && folderOk && uiOk && llmPathOk ? 'PASS' : 'FAIL')
+        + `（媒体=${ok ? 'ok' : 'fail'}，文件夹导入=${folderOk ? 'ok' : 'fail'}，UI 交互=${uiOk ? 'ok' : 'fail'}，查词通路=${llmPathOk ? 'ok' : 'fail'}）`);
       clearTimeout(timer);
       writeTrace();
-      setTimeout(() => app.exit(ok && folderOk && uiOk ? 0 : 2), 400);
+      setTimeout(() => app.exit(ok && folderOk && uiOk && llmPathOk ? 0 : 2), 400);
     } catch (err) {
       log('异常：' + (err && (err.stack || err.message)));
       clearTimeout(timer);

@@ -119,7 +119,7 @@
 
 /* ── 单词：正文保持干净 ──
    不加底色、不加中文小注、不做任何颜色标记；只有悬停和点击时的反馈。
-   「哪些词能查」由级别锁定控制（locked = cursor:not-allowed）。 */
+   所有单词都可点选查询（级别只影响扫描时标记哪些词为「达标难词」）。 */
 .w {
   cursor: pointer;
   border-radius: 4px;
@@ -132,9 +132,6 @@
 }
 .w:hover { background: var(--accent-light); color: var(--accent-2); }
 .w.active { background: var(--accent); color: var(--accent-text); }
-/* 级别锁定：纯不可点击 —— 不改颜色、不加删除线、悬停无反馈、不选中整行、无任何标记 */
-.w.locked,
-.w.locked:hover { cursor: not-allowed; background: transparent; color: inherit; }
 
 /* ── 编辑模式 ── */
 .transcript.editing .w { cursor: text; }
@@ -245,7 +242,6 @@
 /* 释义来源徽标：本地词典（免费） / AI 语境（花 token） */
 .tag.local { background: color-mix(in srgb, #3fb950 16%, transparent); color: #2f9e44; border-color: color-mix(in srgb, #3fb950 36%, transparent); }
 .tag.ai { background: color-mix(in srgb, var(--accent) 16%, transparent); color: var(--accent-2); border-color: color-mix(in srgb, var(--accent) 36%, transparent); }
-.tag.locked { background: color-mix(in srgb, var(--lvl-c1) 16%, transparent); color: var(--lvl-c1); }
 
 body[data-theme="dark"] .tag.b1 { color: var(--lvl-b1); }
 

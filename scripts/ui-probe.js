@@ -437,122 +437,46 @@ function install(ctx) {
       };
     })()`);
 
-    // ───────── 6. 级别锁定（低于所选级别的词呈现为不可点击）─────────
-    out['6a 切到 B2 + 锁定'] = await run('6a', `(async () => {
-      // 选 B2 级别（大量常用词会低于它），再打开锁定
+    // ───────── 6. 所有单词都可点选（锁定模式已移除）─────────
+    out['6a 全部单词均可点选'] = await run('6a', `(async () => {
       const sel = document.getElementById('levelSelect');
-      const before = { locked: document.getElementById('btnLockLevel').classList.contains('locked') };
-      sel.value = 'b2';
+      sel.value = 'gre';                       // 把级别调到最高档，确认没有任何词被锁
       sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 1200));
-      document.getElementById('btnLockLevel').click();
-      await new Promise((r) => setTimeout(r, 1200));
-      const s = await window.PLT.settings.get();
-      return {
-        before,
-        level: s.lookup.level,
-        lockLevel: s.lookup.lockLevel,
-        btnLocked: document.getElementById('btnLockLevel').classList.contains('locked'),
-        ariaPressed: document.getElementById('btnLockLevel').getAttribute('aria-pressed')
-      };
-    })()`);
-
-    // 锁定时：低于级别的词应**预先**呈现为不可点击（无需先点一次）
-    out['6b0 锁定后扫描原始返回'] = await run('6b0', `(async () => {
-      const cues = window.__pltSmoke.cues.map((c) => ({ start: c.start, end: c.end, en: c.en, zh: c.zh, text: c.text }));
-      const res = await window.PLT.llm.scanTranscript(cues, { level: 'b2', limit: 400 });
-      const keys = (o) => Object.keys(o || {}).length;
-      return {
-        ok: res.ok,
-        error: res.error,
-        code: res.code,
-        scannedLines: res.scannedLines,
-        uniqueWords: res.uniqueWords,
-        entries: keys(res.entries),
-        below: keys(res.below),
-        blocked: keys(res.blocked),
-        skipped: keys(res.skipped),
-        localHits: res.localHits,
-        llmWords: res.llmWords,
-        blockedCount: res.blockedCount,
-        sampleBelow: Object.entries(res.below || {}).slice(0, 4),
-        sampleEntries: Object.keys(res.entries || {}).slice(0, 6)
-      };
-    })()`);
-
-    out['6b 低级别词呈禁用态'] = await run('6b', `(async () => {
-      const before = window.__pltSmoke.costStats();
+      await new Promise((r) => setTimeout(r, 1500));
       const scan = await window.__pltSmoke.scanNow();
       const spans = [...document.querySelectorAll('#transcript .w')];
-      const locked = spans.filter((s) => s.classList.contains('locked'));
-      const sample = locked.slice(0, 8).map((s) => ({
-        w: s.dataset.lower, cefr: s.dataset.cefr,
-        cursor: getComputedStyle(s).cursor,
-        struck: getComputedStyle(s).textDecorationLine.includes('line-through'),
-        color: getComputedStyle(s).color,
-        hasTitle: !!s.title
-      }));
-      const normal = spans.filter((s) => !s.classList.contains('locked'));
       return {
+        level: (await window.PLT.settings.get()).lookup.level,
         totalWords: spans.length,
-        lockedCount: locked.length,
-        hitCount: spans.filter((s) => s.classList.contains('hit')).length,
-        sample,
-        // 规格：锁定词只改光标，不改颜色、不加删除线、不加提示
-        allNotAllowed: sample.length > 0 && sample.every((s) => s.cursor === 'not-allowed'),
-        noneStruck: sample.every((s) => s.struck === false),
-        noneHasTitle: sample.every((s) => s.hasTitle === false),
-        colorUnchanged: sample.length > 0 && normal.length > 0 && sample[0].color === getComputedStyle(normal[0]).color,
-        scan,
-        diag: window.__pltSmoke.lockDiag()
+        lockedClass: spans.filter((s) => s.classList.contains('locked')).length,
+        notAllowedCursor: spans.filter((s) => getComputedStyle(s).cursor === 'not-allowed').length,
+        withTitle: spans.filter((s) => s.title).length,
+        scanMarked: scan ? scan.hits : null
       };
     })()`);
 
-    // 点击锁定词：应完全无反应 —— 不弹面板、不跳转、不选中整行、无提示、无请求
-    out['6b2 点锁定词无反应'] = await run('6b2', `(async () => {
+    // 点一个「远低于 GRE 级别」的常用词，必须仍然能查（弹面板 + 真的发出请求）
+    out['6b 低级别常用词仍可查'] = await run('6b', `(async () => {
       const before = window.__pltSmoke.costStats();
-      const v = document.getElementById('video');
-      v.pause();                                   // 排除播放导致的 currentTime 漂移
       document.getElementById('dictPanel').classList.add('hidden');
       document.getElementById('paneBody').classList.remove('dict-open');
-      document.querySelectorAll('#transcript .cue.selected').forEach((n) => n.classList.remove('selected'));
-      document.querySelectorAll('#transcript .w.active').forEach((n) => n.classList.remove('active'));
-      document.querySelectorAll('#toastHost .toast').forEach((n) => n.remove());
-      await new Promise((r) => setTimeout(r, 300));
-      const target = [...document.querySelectorAll('#transcript .w.locked')][0];
-      if (!target) return { error: '没有锁定词可点' };
-      const timeBefore = v.currentTime;
-      const lineBefore = document.querySelectorAll('#transcript .cue.current')[0];
-      const currentLineIndex = lineBefore ? lineBefore.dataset.index : null;
+      const spans = [...document.querySelectorAll('#transcript .w')];
+      const target = spans.find((s) => ['the', 'and', 'today', 'ocean'].includes(s.dataset.lower)) || spans[0];
       target.click();
-      await new Promise((r) => setTimeout(r, 1200));
+      await new Promise((r) => setTimeout(r, 8000));
       const after = window.__pltSmoke.costStats();
-      const lineAfter = document.querySelectorAll('#transcript .cue.current')[0];
       return {
         clicked: target.dataset.lower,
-        cefr: target.dataset.cefr,
+        cursor: getComputedStyle(target).cursor,
         panelVisible: !document.getElementById('dictPanel').classList.contains('hidden'),
-        selectedLines: document.querySelectorAll('#transcript .cue.selected').length,
-        activeWords: document.querySelectorAll('#transcript .w.active').length,
-        toasts: document.querySelectorAll('#toastHost .toast').length,
-        currentLineChanged: (lineAfter ? lineAfter.dataset.index : null) !== currentLineIndex,
-        timeMoved: Math.abs(v.currentTime - timeBefore) > 0.05,
-        apiCallsDelta: after.calls - before.calls
+        word: document.getElementById('dictWord').textContent,
+        phonetic: document.getElementById('dictPhonetic').textContent,
+        tags: [...document.querySelectorAll('#dictTags .tag')].map((t) => t.textContent),
+        body: document.getElementById('dictBody').textContent.replace(/\\s+/g, ' ').slice(0, 240),
+        apiCallsDelta: after.calls - before.calls,
+        tokensDelta: after.totalTokens - before.totalTokens,
+        errNote: document.querySelector('#dictBody .dict-error') ? document.getElementById('dictBody').textContent.slice(0, 160) : null
       };
-    })()`);
-
-    // 解锁 + 恢复级别，确认词重新可点
-    out['6c 解锁后恢复可点'] = await run('6c', `(async () => {
-      document.getElementById('btnLockLevel').click();
-      await new Promise((r) => setTimeout(r, 1200));
-      const spans = [...document.querySelectorAll('#transcript .w')];
-      const locked = spans.filter((s) => s.classList.contains('locked')).length;
-      const sel = document.getElementById('levelSelect');
-      sel.value = 'toefl';
-      sel.dispatchEvent(new Event('change', { bubbles: true }));
-      await new Promise((r) => setTimeout(r, 1200));
-      const s = await window.PLT.settings.get();
-      return { level: s.lookup.level, lockLevel: s.lookup.lockLevel, lockedWordsAfterUnlock: locked };
     })()`);
 
     return out;

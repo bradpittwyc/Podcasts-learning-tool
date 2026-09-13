@@ -102,7 +102,7 @@ button { cursor: default; border: none; background: none; }
    关键：两个 SVG 必须**重叠在同一格**（grid-area: 1/1）。
    早期版本让它们各占一行，于是三角偏上 8px、竖条偏下 8px，切换时看着上下乱跳。
    这里同时锁死尺寸与居中，避免撑高布局或受 line-height 影响。 */
-#btnPlay svg, #trPlay svg, #miniPlay svg, .lock-btn svg {
+#btnPlay svg, #trPlay svg, #miniPlay svg {
   display: block;
   width: var(--icon-size, 18px);
   height: var(--icon-size, 18px);
@@ -114,7 +114,6 @@ button { cursor: default; border: none; background: none; }
 #btnPlay { --icon-size: 20px; }
 #trPlay { --icon-size: 19px; }
 #miniPlay { --icon-size: 16px; }
-.lock-btn { --icon-size: 15px; }
 #btnSettings svg { display: block; width: 18px; height: 18px; }
 
 #btnPlay .ic-pause, #trPlay .ic-pause, #miniPlay .ic-pause { visibility: hidden; }
@@ -125,35 +124,17 @@ body.is-playing #btnPlay .ic-pause,
 body.is-playing #trPlay .ic-pause,
 body.is-playing #miniPlay .ic-pause { visibility: visible; }
 
-/* 级别锁：同样两张图标重叠，锁定状态只切换可见性，位置绝不动 */
-.lock-btn .ic-locked { visibility: hidden; }
-.lock-btn.locked .ic-unlocked { visibility: hidden; }
-.lock-btn.locked .ic-locked { visibility: visible; }
 
 /* 点击感：按下有明确回弹，不再“点了像没点” */
-.cb-icon, .tr-btn, .tr-btn.play, .cb-btn, .mini-btn, .ph-btn, .rate-chip, .lock-btn {
+.cb-icon, .tr-btn, .tr-btn.play, .cb-btn, .mini-btn, .ph-btn, .rate-chip {
   transition: background var(--dur-fast) ease, border-color var(--dur-fast) ease,
               transform 110ms cubic-bezier(.2, .9, .3, 1.2), box-shadow 140ms ease, color var(--dur-fast) ease;
 }
-.cb-icon:active, .tr-btn:active, .mini-btn:active, .ph-btn:active, .rate-chip:active, .lock-btn:active {
-  transform: scale(.9);
-}
+.cb-icon:active, .tr-btn:active, .mini-btn:active, .ph-btn:active, .rate-chip:active, }
 .cb-btn:active { transform: translateY(1px) scale(.975); }
 .tr-btn.play:active { transform: scale(.88); box-shadow: 0 1px 4px var(--accent-glow); }
 .tr-btn.play.playing { box-shadow: 0 0 0 3px var(--accent-glow), 0 2px 10px var(--accent-glow); }
 .cb-icon.big:active { transform: scale(.88); }
-
-/* 级别锁定按钮 */
-.lock-btn {
-  width: 24px; height: 24px;
-  display: grid; place-items: center;
-  border-radius: var(--radius-sm);
-  color: var(--text-3);
-  margin-left: 2px;
-}
-.lock-btn:hover { background: var(--bg-hover); color: var(--text-1); }
-.lock-btn.locked { color: var(--accent-2); background: var(--accent-light); }
-.lock-btn svg { width: 15px; height: 15px; }
 
 .wco { display: flex; height: var(--titlebar-h); -webkit-app-region: no-drag; }
 .wco-btn {

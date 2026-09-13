@@ -53,7 +53,7 @@
       try { return await window.PLT.dict.stats(); } catch (_) { return { loaded: false, size: 0 }; }
     }
 
-    /** 查询单个词：释义一律走大模型（结合语境给义项）；级别锁定时先在本地拦下低级别词 */
+    /** 查询单个词：释义一律走大模型（结合语境给义项）。所有单词都可查。 */
     async lookupWord(word, cue, options) {
       const key = String(word || '').toLowerCase();
       if (!key) return null;
@@ -68,15 +68,11 @@
           });
           this.track({ toApi: res.toApi, fromCache: res.fromCache, usage: res.usage, ms: res.ms });
           if (!res.ok) return { error: res.code, message: res.error };
-          if (res.blocked) {
-            return {
-              blocked: true,
-              reason: res.reason,
-              cefr: res.cefr || '',
-              message: '该词低于当前取词级别，且已开启级别锁定 —— 已拦截，不产生任何费用。'
-            };
+          if (!res.entry) {
+            return res.noContent
+              ? { error: 'NO_CONTENT', message: '模型这次没返回释义（偶发），点「重新查询」一般就好了。' }
+              : { error: 'NO_DATA', message: '没有查到该词的解释，可点「重新查询」再试。' };
           }
-          if (!res.entry) return { error: 'NO_DATA', message: '大模型没有返回该词的解释，可点「重新查询」再试。' };
           return { entry: res.entry };
         } catch (err) {
           return { error: 'EXCEPTION', message: err.message };
@@ -89,7 +85,7 @@
       return p;
     }
 
-    /** 扫描整篇字幕，按级别标出难词（本地词典为主，只有难词才走 AI） */
+    /** 扫描整篇字幕，按级别标出难词（本地词典分级为主，只有难词才走 AI） */
     async scanAll(cues, options) {
       if (this.scanning) { toast('正在扫描中，请稍候…', 'warn'); return null; }
       if (!cues || !cues.length) { toast('没有字幕可扫描', 'warn'); return null; }
@@ -119,15 +115,7 @@
             source: v.source || (v.enDef ? 'ai' : 'local')
           });
         }
-        // 低于级别的词：锁定 → 标记为 blocked（前台呈现为不可点击）；未锁定 → 保留等级信息但不标为“难词”
-        for (const [k, v] of Object.entries(res.below || {})) {
-          if (v && v.reason === 'locked') {
-            map.set(k, { status: 'blocked', cefr: v.cefr || '', examLevels: v.examLevels || [], translation: '' });
-            continue;
-          }
-          map.set(k, { ...(v || {}), status: 'below', translation: (v && v.translation) || '' });
-        }
-        for (const [k, v] of Object.entries(res.skipped || {})) {
+                for (const [k, v] of Object.entries(res.skipped || {})) {
           map.set(k, { ...(v.entry || {}), status: v.reason === 'no-data' ? 'queried' : 'below', reason: v.reason });
         }
         this.status('', false);
@@ -229,22 +217,11 @@
       }
       this.phEl.textContent = (this.current && this.current.phonetic) || '';
 
-      // 级别锁定拦截：明确告知，不产生费用
-      if (result && result.blocked) {
-        const lv = this.opts.levelLabel ? this.opts.levelLabel() : '';
-        this.tagsEl.appendChild(el('span', { class: 'tag', text: '已锁定' }));
-        if (result.cefr) this.tagsEl.appendChild(el('span', { class: `tag ${String(result.cefr).toLowerCase()}`, text: result.cefr }));
-        this.body.appendChild(el('div', { class: 'skip-note' }, [
-          el('b', { text: '该词低于当前取词级别（' + (lv || '') + '），已被级别锁定拦截。' }),
-          el('div', { class: 'muted small', style: { marginTop: '6px' }, text: '不显示释义，也不会调用大模型 —— 0 费用。想查这个级别以下的词，点顶栏的锁形按钮解锁即可。' })
-        ]));
-        U.$('#dictSave').textContent = '＋ 生词本';
-        return;
-      }
-
-      if (!result || result.error) {
+            if (!result || result.error) {
         const messages = {
-          NO_API_KEY: '还没有配置大模型 API Key。本词的释义需要 AI 语境分析 —— 可在 ⚙ 设置 → 大模型 填入 Key（推荐 DeepSeek，约 ¥1/百万 tokens）。',
+          NO_API_KEY: '还没有配置大模型 API Key。点选查词由大模型生成释义 —— 可在 ⚙ 设置 → 大模型 填入 Key。',
+          NO_CONTENT: '模型这次没返回释义（偶发情况），点「重新查询」再试一次即可。',
+          NO_DATA: '没有查到该词的解释，可点「重新查询」再试。',
           TIMEOUT: '请求超时。可在设置里调大超时时间，或检查网络/代理。',
           NETWORK: '网络请求失败，请检查网络或 API 地址。',
           BAD_JSON: '模型返回格式无法解析，可点击「重新查询」再试一次。',
@@ -300,9 +277,7 @@
         this.body.appendChild(el('div', { class: 'dict-sec' }, [el('h4', { text: '原文语境' }), span]));
       }
       if (entry.belowLevel) {
-        this.body.appendChild(el('div', { class: 'skip-note', text: `低于当前取词级别（${entry.cefr || ''}）—— 释义来自本地词典，未调用大模型。` }));
-      } else if (entry.needContext) {
-        this.body.appendChild(el('div', { class: 'skip-note', text: '这个词需要结合语境/背景知识，已交给 AI 分析（会产生少量 token 费用）。' }));
+        this.body.appendChild(el('div', { class: 'skip-note', text: `该词低于当前取词级别（${entry.cefr || ''}），扫描时不会标记为「难词」；释义仍由大模型结合语境生成。` }));
       }
       U.$('#dictSave').textContent = '＋ 生词本';
     }

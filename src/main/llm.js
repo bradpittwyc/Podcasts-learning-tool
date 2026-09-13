@@ -189,13 +189,14 @@ Input: JSON {"i":int,"w":word,"c":the sentence it appears in}.
 Output STRICT JSON, no prose:
 {"r":[{"i":0,"lemma":"base form","ph":"/.../","pos":"n.","cefr":"B2","ex":["TOEFL"],"ac":false,"idi":false,"rare":false,"ok":true,"zh":"简明中文释义","en":"short English definition"}]}
 Rules:
-1 cefr one of A1,A2,B1,B2,C1,C2 - difficulty for an adult Chinese learner.
-2 ex: any of IELTS,TOEFL,GRE this word belongs to; else [].
-3 ac=academic word; idi=idiom/phrasal verb; rare=literary or highly specialized.
-4 ok is the only cost-control flag: false when the word is clearly BELOW target level L given in the user message, otherwise true. Functional words, proper nouns and numbers are always false. When ok=false set zh and en to "".
-5 zh <= 14 Chinese characters, disambiguated by context c. en <= 12 words.
-6 lemma = base form (running->run, better->good); keep multi-word units as-is.
-7 One output item per input item, same i and order, no omissions.`;
+1 ALWAYS give zh and en for every word, including very common words and function words.
+2 cefr one of A1,A2,B1,B2,C1,C2 - difficulty for an adult Chinese learner.
+3 ex: any of IELTS,TOEFL,GRE this word belongs to; else [].
+4 ac=academic word; idi=idiom/phrasal verb; rare=literary or highly specialized.
+5 ok = whether this word is AT or ABOVE the target level L given in the user message. It is a sorting flag used to mark "hard words"; it does NOT affect zh/en, which must always be filled.
+6 zh <= 14 Chinese characters, disambiguated by context c. en <= 12 words.
+7 lemma = base form (running->run, better->good); keep multi-word units as-is.
+8 One output item per input item, same i and order, no omissions.`;
 
 function buildUserPrompt(items, ctx = {}) {
   const level = LEVEL_BY_ID[ctx.level] || LEVEL_BY_ID.none;
@@ -254,13 +255,18 @@ async function chatJSON(messages, opts = {}) {
     err.code = 'NO_API_KEY';
     throw err;
   }
+  const wantThinking = !!s.get('llm.thinking', false);
+  // 思考模式不支持 temperature（会被忽略），关闭时才传
   const body = {
     model,
     messages,
-    temperature: Number(s.get('llm.temperature', 0.2)),
-    max_tokens: Number(s.get('llm.maxTokens', 2048)),
+    ...(wantThinking ? {} : { temperature: Number(s.get('llm.temperature', 0.2)) }),
+    // 思考模式下思维链也计入 max_tokens，给太少会导致 content 为空，所以统一抬高下限
+    max_tokens: Math.max(Number(s.get('llm.maxTokens', 8192)) || 8192, wantThinking ? 8192 : 2048),
     stream: false,
-    response_format: { type: 'json_object' }
+    response_format: { type: 'json_object' },
+    // DeepSeek V4：{"thinking":{"type":"disabled"}} 关闭思维链（见官方 Thinking Mode 文档）
+    thinking: { type: wantThinking ? 'enabled' : 'disabled' }
   };
   const controller = new AbortController();
   const timeout = Number(s.get('llm.timeoutMs', 45000));
@@ -318,7 +324,15 @@ async function chatJSON(messages, opts = {}) {
     e.raw = content.slice(0, 500);
     throw e;
   }
-  return { json, raw: content, usage: data?.usage || {}, ms: Date.now() - t0, model };
+  return {
+    json,
+    raw: content,
+    usage: data?.usage || {},
+    ms: Date.now() - t0,
+    model,
+    finishReason: data?.choices?.[0]?.finish_reason || '',
+    reasoning: (data?.choices?.[0]?.message?.reasoning_content || '').length
+  };
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -352,7 +366,8 @@ function normalizeEntry(raw, originalWord, levelId) {
     exampleZh: String(pick('exampleZh') || '').trim(),
     lookedUpAt: Date.now()
   };
-  if (!entry.translation && !entry.enDef && entry.shouldExplain) entry.shouldExplain = false;
+  // 模型没给释义 → 标记为无数据（上层提示重试）；不再用它去翻转 ok 标记
+  if (!entry.translation && !entry.enDef) entry.noContent = true;
   return entry;
 }
 
@@ -462,6 +477,15 @@ async function lookupBatch(requests, options = {}) {
     const parsed = resp.json || {};
     const items = Array.isArray(parsed.r) ? parsed.r
       : (Array.isArray(parsed.items) ? parsed.items : []);   // r = 精简键，items = 兼容旧格式
+    results.debug = results.debug || [];
+    results.debug.push({
+      batch: group.length,
+      finishReason: resp.finishReason,
+      reasoningChars: resp.reasoning,
+      usage: resp.usage,
+      itemsReturned: items.length,
+      rawHead: String(resp.raw || '').slice(0, 300)
+    });
     const byIndex = new Map();
     for (const it of items) {
       const idx = Number(it.i);
@@ -479,11 +503,19 @@ async function lookupBatch(requests, options = {}) {
       const pass = force || levelId === 'none' || !options.applyLevelFilter
         ? true
         : meetsLevel(entry, levelId);
+      const hasDefinition = !!(entry.translation || entry.enDef);
+      // ok=false（低于级别）只表示「不算达标难词」，不表示没有释义。
+      // 点选查词需要释义，所以有内容的一律放进 entries，并用 belowLevel 标记供扫描过滤。
+      if (hasDefinition && (entry.belowLevelHint || !entry.shouldExplain || !pass)) {
+        entry.belowLevel = true;
+        results.entries[key] = entry;
+        cacheSet(req.word, req.context, entry);
+        return;
+      }
       if (!entry.shouldExplain || !pass) {
         results.skipped[key] = { skipped: true, reason: entry.shouldExplain ? 'below-level' : 'not-needed', cefr: entry.cefr, examLevels: entry.examLevels };
-        cacheSet(req.word, req.context, null, { skipReason: results.skipped[key].reason, cefr: entry.cefr });
-        // 仍然返回分级信息，用于正文高亮标记
         results.skipped[key].entry = { ...entry, translation: '', enDef: '', example: '', exampleZh: '' };
+        cacheSet(req.word, req.context, null, { skipReason: results.skipped[key].reason, cefr: entry.cefr });
       } else {
         results.entries[key] = entry;
         cacheSet(req.word, req.context, entry);
@@ -542,12 +574,11 @@ const localDict = require('./local-dict');
 
 /**
  * @param {Array<{word:string, context?:string}>} requests
- * @param {object} options { level, lockLevel, force, localDict, llmForContext, topic, onlyLocal }
+ * @param {object} options { level, force, localDict, llmForContext, topic, onlyLocal, skipLocal }
  */
 async function lookupTiered(requests, options = {}) {
   const s = settings();
   const levelId = options.level || s.get('lookup.level', 'toefl');
-  const lockLevel = options.lockLevel !== undefined ? !!options.lockLevel : !!s.get('lookup.lockLevel', false);
   const useLocal = options.localDict !== undefined ? !!options.localDict : !!s.get('lookup.localDict', true);
   const llmForContext = options.llmForContext !== undefined ? !!options.llmForContext : !!s.get('lookup.llmForContext', true);
   const list = (requests || []).map((r) => ({ word: String(r.word || '').trim(), context: r.context || '' })).filter((r) => r.word);
@@ -557,13 +588,11 @@ async function lookupTiered(requests, options = {}) {
   const result = {
     ok: true,
     level: levelId,
-    locked: lockLevel,
     entries: {},          // 有释义（本地或 AI）
     below: {},            // 低于级别：锁定则不可取词；未锁定则带本地释义
-    blocked: {},          // 锁定拦截
     skipped: {},
     stats: {
-      requested: list.length, localHits: 0, llmWords: 0, blocked: 0,
+      requested: list.length, localHits: 0, llmWords: 0,
       aiCalls: 0, aiSkippedByCache: 0, localOnly: 0
     },
     usage: null,
@@ -573,24 +602,22 @@ async function lookupTiered(requests, options = {}) {
 
   // ① 本地词典分级（skipLocal 时全部交给 AI）
   const local = (useLocal && !skipLocal)
-    ? localDict.lookupBatch(list, { level: levelId, lockLevel, llmForContext })
+    ? localDict.lookupBatch(list, { level: levelId, llmForContext })
     : {
         entries: {},
         skipped: {},
         below: {},
         needLlm: list.map((r) => ({ ...r, reason: skipLocal ? 'skip-local' : 'local-disabled' })),
-        stats: { localHits: 0, blocked: 0, needLlm: list.length, total: list.length }
+        stats: { localHits: 0, needLlm: list.length, total: list.length }
       };
 
   Object.assign(result.entries, local.entries);
   Object.assign(result.below, local.below);
   result.stats.localHits = local.stats.localHits;
-  result.stats.blocked = local.stats.blocked;
 
   // ② 只对「需要 AI」的词调用大模型；锁定时低级别词已在本地被拦下
   const needLlm = (local.needLlm || []).filter((r) => {
     if (options.onlyLocal) return false;
-    if (lockLevel && local.below[r.word.toLowerCase()]) return false;
     return true;
   });
   if (needLlm.length) {

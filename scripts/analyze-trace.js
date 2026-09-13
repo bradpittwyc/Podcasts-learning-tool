@@ -31,18 +31,16 @@ if (i > 0) {
         const dPause = Math.abs(g.playing.pause.cy - g.playing.btn.cy);
         return dPlay <= 0.6 && dPause <= 0.6 && Math.abs(g.transport.diff) <= 0.6;
       })()],
-      ['6b 锁定词只是不可点击', (() => {
-        const r = obj['6b 低级别词呈禁用态'];
+      ['6a 全部单词均可点选', (() => {
+        const r = obj['6a 全部单词均可点选'];
         if (!r) return false;
-        return r.lockedCount > 10 && r.allNotAllowed === true && r.noneStruck === true
-          && r.noneHasTitle === true && r.colorUnchanged === true;
+        return r.lockedClass === 0 && r.notAllowedCursor === 0
+          && r.withTitle === 0 && r.totalWords > 50;
       })()],
-      ['6b2 点锁定词完全无反应', (() => {
-        const r = obj['6b2 点锁定词无反应'];
+      ['6b 低级别常用词仍可查（走 AI）', (() => {
+        const r = obj['6b 低级别常用词仍可查'];
         if (!r) return false;
-        return r.panelVisible === false && r.selectedLines === 0 && r.activeWords === 0
-          && r.toasts === 0 && r.currentLineChanged === false && r.timeMoved === false
-          && r.apiCallsDelta === 0;
+        return r.panelVisible === true && r.cursor === 'pointer' && r.apiCallsDelta >= 1;
       })()],
       ['2b 进度条拖动到 50%', obj['2b 拖动到 50%'] && obj['2b 拖动到 50%'].tUp > 20],
       ['3a 点字幕跳转（不回到开头）', obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'] && obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'].after > 30],

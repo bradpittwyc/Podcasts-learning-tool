@@ -233,12 +233,7 @@
           { value: 'gre', label: 'GRE 高阶词及以上' },
           { value: 'educated_native', label: 'Educated Native 受过良好教育的母语级' }
         ]),
-        '低于该级别的常用词不会被当作“难词”高亮；点了也只用本地词典（0 费用），不会调用 AI。'
-      ));
-      form.appendChild(this.switchRow(
-        '🔒 锁定级别：低于所选级别的单词不可取词',
-        'lookup.lockLevel',
-        '开启后，点击低级别词会被直接拦截（不显示释义、不调用 AI）。顶栏级别选择器右侧的锁形按钮可随时切换。'
+        '低于该级别的常用词不会被标记为「难词」；但所有单词都可以点选查询（由大模型结合语境给释义）。'
       ));
 
       form.appendChild(el('div', { class: 'section-title', text: '离线本地词典（0 费用）' }));
@@ -269,7 +264,6 @@
       ));
 
       form.appendChild(el('div', { class: 'section-title', text: '其他' }));
-      form.appendChild(this.switchRow('手动点击单词时忽略级别过滤', 'lookup.showAllOnClick', '仅当未开启“锁定级别”时有效：点低级别词仍走本地词典'));
       form.appendChild(this.switchRow('释义用中文', 'lookup.explainInChinese', '关闭后释义为纯英文'));
       form.appendChild(this.switchRow('启用 AI 查词缓存', 'lookup.cacheEnabled', 'AI 查过的词在同一语境下只付费一次'));
       form.appendChild(this.switchRow('加载字幕后自动扫描全文难词', 'lookup.autoScan', '本地词典扫描是毫秒级且免费，建议开启'));

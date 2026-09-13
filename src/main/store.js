@@ -18,20 +18,19 @@ const DEFAULT_SETTINGS = {
   llm: {
     provider: 'deepseek',
     baseURL: 'https://api.deepseek.com/v1',
-    model: 'deepseek-chat',
+    model: 'deepseek-flash',
     apiKeyEnc: '',          // safeStorage 加密后的 base64
     apiKeyPlain: '',        // 无法加密时的降级存储（有提示）
     temperature: 0.2,
-    maxTokens: 2048,
+    maxTokens: 8192,
     timeoutMs: 45000,
+    thinking: false,         // 关闭思考模式：V4 默认开启且思维链按输出计费，词典任务不需要
     batchSize: 24           // 一次请求最多多少个词（省钱：批量合并）
   },
   // ── 取词难度分级（核心省钱开关） ───────────────────────────────
   lookup: {
     level: 'toefl',              // none | ielts | toefl | gre | educated_native
     filterMode: 'at-or-above',   // at-or-above | exact | ai-judge
-    lockLevel: false,            // 锁定：低于所选级别的单词不可取词
-    showAllOnClick: true,        // 未锁定时，手动点击仍可查低级别词（走本地词典）
     explainInChinese: true,
     cacheEnabled: true,
     autoScan: true,              // 加载字幕后自动批量分级
@@ -41,7 +40,7 @@ const DEFAULT_SETTINGS = {
     contextChars: 160,
     // 本地词典只用于「分级筛选」（决定哪些词可被选中），点选后的释义一律走大模型
     localDict: true,
-    llmForContext: false
+    contextAware: true           // 结合上下文给词义（点选查词一律开启）
   },
   // ── 播放器 ───────────────────────────────────────────────────
   player: {
