@@ -496,8 +496,13 @@ async function lookupBatch(requests, options = {}) {
       const raw = byIndex.get(idx) || items[idx] || null;
       const entry = normalizeEntry(raw, req.word, levelId);
       if (!entry) {
+        // 模型没返回这一项：不写缓存，下次点选会重新请求
         results.skipped[key] = { skipped: true, reason: 'no-data' };
-        cacheSet(req.word, req.context, null, { skipReason: 'no-data' });
+        return;
+      }
+      // 有内容但模型没给释义（NO_CONTENT，多为偶发）→ 也不写缓存，避免把「空结果」永久缓存
+      if (entry.noContent) {
+        results.skipped[key] = { skipped: true, reason: 'no-content', cefr: entry.cefr, examLevels: entry.examLevels, entry };
         return;
       }
       const pass = force || levelId === 'none' || !options.applyLevelFilter
