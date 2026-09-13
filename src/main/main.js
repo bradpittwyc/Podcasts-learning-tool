@@ -38,7 +38,7 @@ if (!gotLock) {
   app.quit();
 } else {
   app.on('second-instance', (_e, argv) => {
-    const files = argv.slice(1).filter((a) => !a.startsWith('-') && isSupportedFile(a));
+    const files = collectArgvFiles(argv);
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.focus();
@@ -49,7 +49,28 @@ if (!gotLock) {
 
 function isSupportedFile(p) {
   const ext = path.extname(String(p || '')).toLowerCase();
-  return subs.MEDIA_EXT.includes(ext) || subs.SUBTITLE_EXT.includes(ext);
+  if (!subs.MEDIA_EXT.includes(ext) && !subs.SUBTITLE_EXT.includes(ext)) return false;
+  // 目录不能当文件打开（例如 --smoke-folder 后面的路径）
+  try { return fs.statSync(p).isFile(); } catch (_) { return false; }
+}
+
+/**
+ * 从命令行参数里挑出「要打开的文件」。
+ * 必须跳开带值的开关（--smoke-out / --smoke-folder …）后面的参数，否则会把目录当成媒体文件。
+ */
+function collectArgvFiles(argv) {
+  const VALUE_FLAGS = new Set(['--smoke-out', '--smoke-folder', '--user-data-dir', '--lang', '--remote-debugging-port']);
+  const out = [];
+  for (let i = 0; i < argv.length; i++) {
+    const a = String(argv[i]);
+    if (VALUE_FLAGS.has(a)) { i++; continue; }
+    if (a.startsWith('-')) continue;
+    if (i <= 1) continue;              // argv[0]=exe, argv[1]=app 目录（或第一个文件关联参数）
+    if (isSupportedFile(a)) out.push(a);
+  }
+  // 文件关联启动时目标文件位于 argv[1]，单独兜底判断
+  if (argv[1] && isSupportedFile(argv[1])) out.unshift(argv[1]);
+  return [...new Set(out)];
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -540,6 +561,11 @@ function registerIpc() {
     return found ? { path: found } : null;
   });
 
+  // 扫描文件夹并配对同名字幕（供「文件夹导入」列表与自动化测试复用）
+  ipcMain.handle('file:scanFolder', (_e, dir) => {
+    try { return scanFolder(dir); } catch (err) { return [{ error: err.message }]; }
+  });
+
   ipcMain.handle('file:autoSaveSubtitle', async (_e, payload) => {
     // 自动保存到媒体同目录（校对后一键落盘）
     const { cues, targetPath } = payload || {};
@@ -771,7 +797,7 @@ app.whenReady().then(() => {
   buildMenu();
 
   // 命令行传入的文件（文件关联 / 拖到 exe 上打开）——必须在建窗前收集
-  const argvFiles = process.argv.slice(1).filter((a) => !a.startsWith('-') && isSupportedFile(a));
+  const argvFiles = collectArgvFiles(process.argv);
   if (argvFiles.length) pendingOpenFiles.push(...argvFiles);
   if (isSmoke) console.log('[smoke] argv=' + JSON.stringify(process.argv) + ' pending=' + JSON.stringify(pendingOpenFiles));
 
@@ -788,14 +814,34 @@ app.whenReady().then(() => {
 // 用于在无人值守环境下验证真实运行状态（媒体协议 / 渲染 / 字幕解析）
 // ─────────────────────────────────────────────────────────────
 function runSmokeTest() {
-  const log = (...a) => console.log('[smoke]', ...a);
-  const smokeFile = () => process.argv.find((a) => isSupportedFile(a)) || '';
-  const timer = setTimeout(() => { log('超时退出'); app.exit(3); }, 90000);
+  const lines = [];
+  const traceFile = smokeOut
+    ? smokeOut.replace(/\.png$/i, '-trace.txt')
+    : path.join(store.getDataDir(), 'smoke-trace.txt');
+  const writeTrace = () => {
+    try { fs.writeFileSync(traceFile, lines.join('\n'), 'utf8'); } catch (err) { console.log('[smoke] trace 写入失败：' + err.message); }
+  };
+  const log = (...a) => {
+    const text = a.map((x) => (typeof x === 'string' ? x : JSON.stringify(x))).join(' ');
+    lines.push(`[${new Date().toISOString().slice(11, 23)}] ${text}`);
+    writeTrace(); // 每行都立即落盘：即使进程异常退出也能看到进度
+    console.log('[smoke]', ...a);
+  };
+  const smokeFile = () => collectArgvFiles(process.argv)[0] || '';
+  const argAfter = (flag) => {
+    const i = process.argv.indexOf(flag);
+    return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : null;
+  };
+  const smokeFolder = argAfter('--smoke-folder');
+  log('开始冒烟测试 · trace=' + traceFile);
+  const timer = setTimeout(() => { log('超时退出（90s）'); writeTrace(); app.exit(3); }, 90000);
   mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
     if (level >= 2 || /plt-ipc/.test(message)) console.log(`[renderer:${level}] ${message} (${sourceId}:${line})`);
   });
+  log('等待 did-finish-load…');
   mainWindow.webContents.once('did-finish-load', async () => {
     const js = (code) => mainWindow.webContents.executeJavaScript(code);
+    log('did-finish-load 已触发，等待渲染进程就绪…');
     try {
       // 等待渲染进程 boot() 完成（__pltSmoke 在 boot 末尾暴露）
       let ready = false;
@@ -908,12 +954,34 @@ function runSmokeTest() {
       log('截图 3 已保存：' + out2);
 
       const ok = media.duration > 0 && media.error === null;
-      log(ok ? '结果：PASS' : '结果：FAIL');
+
+      // ── 文件夹导入回归测试（覆盖「选择文件夹后打不开视频」这一路径）──
+      let folderOk = true;
+      if (smokeFolder) {
+        const scan = await js(`window.PLT.file.scanFolder(${JSON.stringify(smokeFolder)})`).catch((e) => ({ error: e.message }));
+        log('文件夹扫描：' + JSON.stringify(Array.isArray(scan) ? scan.map((x) => ({ name: x.name, kind: x.kind, sub: !!x.subtitlePath, error: x.error })) : scan));
+        const sim = await js(`window.__pltSmoke.simulateFolderOpen(${JSON.stringify(smokeFolder)}, 0)`).catch((e) => ({ error: e.message }));
+        log('文件夹打开（模拟点击第 1 条）：' + JSON.stringify(sim));
+        await new Promise((r) => setTimeout(r, 2600));
+        const after = await js(`(() => {
+          const v = document.getElementById('video');
+          return { state: window.__pltSmoke.state(), duration: v.duration, error: v.error ? v.error.code : null, readyState: v.readyState };
+        })()`);
+        log('文件夹打开后状态：' + JSON.stringify(after));
+        folderOk = !!(after.state && after.state.media) && after.duration > 0 && after.error === null;
+        log('文件夹导入回归：' + (folderOk ? 'PASS' : 'FAIL'));
+      } else {
+        log('文件夹导入回归：跳过（未传 --smoke-folder）');
+      }
+
+      log('结果：' + (ok && folderOk ? 'PASS' : 'FAIL') + `（媒体=${ok ? 'ok' : 'fail'}，文件夹导入=${folderOk ? 'ok' : 'fail'}）`);
       clearTimeout(timer);
-      setTimeout(() => app.exit(ok ? 0 : 2), 400);
+      writeTrace();
+      setTimeout(() => app.exit(ok && folderOk ? 0 : 2), 400);
     } catch (err) {
-      log('异常：' + err.message);
+      log('异常：' + (err && (err.stack || err.message)));
       clearTimeout(timer);
+      writeTrace();
       app.exit(4);
     }
   });

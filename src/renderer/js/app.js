@@ -156,6 +156,25 @@
       get subtitle() { return state.subtitle; },
       get words() { return transcript.words.size; },
       get highlightCount() { return document.querySelectorAll('#transcript .w.hit').length; },
+      /** 模拟「文件夹导入」：走真实流程（扫描 → 弹列表 → 点击第 idx 行） */
+      simulateFolderOpen: async (dir, idx = 0) => {
+        window.__pltSmokeLog = [];
+        await openFolderDialog(dir, idx);
+        // 等待 onClose → loadMedia 完成
+        for (let i = 0; i < 60; i++) {
+          await new Promise((r) => setTimeout(r, 150));
+          const s = state.media;
+          if (s && (window.__pltSmokeLog || []).some((m) => m.startsWith('folder open'))) break;
+        }
+        const rows = await window.PLT.file.scanFolder(dir);
+        const media = rows.filter((x) => x && x.path && !x.error);
+        return {
+          rows: media.map((r) => ({ name: r.name, kind: r.kind, subtitle: !!r.subtitlePath })),
+          log: window.__pltSmokeLog || [],
+          modalStillOpen: !$('#modalHost').classList.contains('hidden'),
+          opened: state.media ? state.media.name : null
+        };
+      },
       state: () => ({
         media: state.media ? state.media.name : null,
         subtitle: state.subtitle ? state.subtitle.name : null,
@@ -796,32 +815,93 @@
     return res && res.ok ? res.text : '';
   }
 
-  async function openFolderDialog() {
-    const list = await window.PLT.dialog.openFolder();
+  /**
+   * 文件夹导入：扫描 → 弹出可点击列表 → 点击某项即载入该媒体（同名字幕自动配对）
+   * @param {string} [dirOverride] 指定目录（自动化测试用，跳过系统对话框）
+   * @param {number} [clickIndex]  自动点击第 N 行（自动化测试用，走真实 onclick 路径）
+   */
+  async function openFolderDialog(dirOverride, clickIndex) {
+    const list = dirOverride ? await window.PLT.file.scanFolder(dirOverride) : await window.PLT.dialog.openFolder();
     if (!list || !list.length) return;
     if (list[0] && list[0].error) { toast('扫描失败：' + list[0].error, 'err'); return; }
-    state.mediaList = list;
+
+    const media = list.filter((x) => x && x.path && !x.error);
+    const onlySubs = list.filter((x) => x && x.error);
+    if (!media.length) {
+      U.modal({
+        title: '这个文件夹里没有找到音视频文件',
+        subtitle: '扫描结果',
+        narrow: true,
+        body: el('div', { class: 'form', style: { paddingTop: '14px' } }, [
+          el('div', { class: 'skip-note', html: `支持导入的媒体格式：<br><b>${S.MEDIA_EXT.join('  ')}</b><br><br>字幕格式：<br>${S.SUBTITLE_EXT.join('  ')}` }),
+          el('div', { class: 'desc', text: '提示：可以只导入字幕文件，或直接把音视频拖进窗口。' })
+        ]),
+        buttons: [
+          { label: '导入字幕文件', action: () => openSubtitleDialog() },
+          { label: '选择单个媒体文件', accent: true, action: () => openMediaDialog() }
+        ]
+      });
+      return;
+    }
+    if (onlySubs.length) toast(`${onlySubs.length} 个条目无法读取，已跳过`, 'warn');
+
+    state.mediaList = media;
     state.mediaIndex = 0;
-    // 构建播放列表
-    let pick = 0;
+
+    // 构建播放列表：点击条目打开（通过 modal.close 触发 onClose 真正加载）
+    let pick = -1;
+    let closeFn = null;
     U.modal({
-      title: `文件夹内找到 ${list.length} 个媒体文件`,
+      title: `文件夹内找到 ${media.length} 个媒体文件`,
       subtitle: '点击条目打开；同名字幕会自动加载',
-      body: el('div', { class: 'form', style: { maxHeight: '52vh', overflow: 'auto', paddingTop: '10px' } }, list.map((item, i) => el('button', {
-        class: 'ctx-item',
-        style: { borderBottom: '1px solid var(--divider)' },
-        onclick: (e) => { pick = i; e.target.closest('.modal-host') && $('#modalHost').classList.add('hidden'); $('#modalHost').innerHTML = ''; }
-      }, [
-        el('span', { text: `${i + 1}. ${item.name}` }),
-        el('span', { class: 'kbd', text: item.subtitlePath ? '✓ 有字幕' : '无字幕' })
-      ]))),
-      buttons: [{ label: '取消', action: () => { pick = -1; } }],
-      onClose: async () => {
-        if (pick < 0) return;
-        state.mediaIndex = pick;
-        await loadMedia(list[pick]);
+      body: el('div', { class: 'form', style: { maxHeight: '52vh', overflow: 'auto', paddingTop: '10px' } },
+        media.map((item, i) => el('button', {
+          class: 'ctx-item',
+          style: { borderBottom: '1px solid var(--divider)', gap: '10px' },
+          title: item.path,
+          onclick: () => {
+            pick = i;
+            if (closeFn) closeFn(i);
+            else { $('#modalHost').classList.add('hidden'); loadMedia(media[i]); }
+          }
+        }, [
+          el('span', { style: { flex: '1', overflow: 'hidden', textOverflow: 'ellipsis' }, text: `${i + 1}. ${item.name}` }),
+          item.kind === 'audio' ? el('span', { class: 'tag', text: '音频' }) : null,
+          item.size ? el('span', { class: 'muted small', text: U.fmtBytes(item.size) }) : null,
+          el('span', { class: 'kbd', text: item.subtitlePath ? '✓ 有字幕' : '无字幕' })
+        ]))),
+      buttons: [{ label: '取消' }],
+      render: (_box, api) => {
+        closeFn = api.close;
+        // 自动化测试：走真实 onclick（等同于用户点击第 N 行）
+        if (typeof clickIndex === 'number' && clickIndex >= 0) {
+          setTimeout(() => {
+            const rows = document.querySelectorAll('#modalHost .ctx-item');
+            const row = rows[Math.min(clickIndex, rows.length - 1)];
+            if (row) row.click();
+            else logSmoke('folder row not found');
+          }, 120);
+        }
+      },
+      onClose: async (result) => {
+        const idx = (typeof result === 'number' && result >= 0) ? result : pick;
+        if (idx < 0 || !media[idx]) return;
+        state.mediaIndex = idx;
+        try {
+          await loadMedia(media[idx]);
+          logSmoke(`folder open ok: ${media[idx].name}`);
+        } catch (err) {
+          window.__pltErrors.push('openFolder/loadMedia: ' + (err && (err.stack || err.message)));
+          logSmoke('folder open FAILED: ' + (err && err.message));
+          toast('打开失败：' + (err && err.message ? err.message : err), 'err', 8000);
+        }
       }
     });
+  }
+
+  function logSmoke(msg) {
+    window.__pltSmokeLog = window.__pltSmokeLog || [];
+    window.__pltSmokeLog.push(msg);
   }
 
   async function handleDroppedFiles(files) {
