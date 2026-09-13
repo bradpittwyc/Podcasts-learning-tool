@@ -198,7 +198,7 @@
       this.phEl.textContent = '';
       clear(this.tagsEl);
       clear(this.body);
-      this.body.appendChild(el('div', { class: 'dict-loading' }, [el('div', { class: 'spinner' }), el('span', { text: '正在请求大模型…' })]));
+      this.body.appendChild(el('div', { class: 'dict-loading' }, [el('div', { class: 'spinner' }), el('span', { text: '思考中........' })]));
       document.querySelectorAll('.w.loading').forEach((n) => n.classList.remove('loading'));
       const span = [...document.querySelectorAll('.w')].find((n) => n.dataset.lower === String(word).toLowerCase());
       if (span) span.classList.add('loading');

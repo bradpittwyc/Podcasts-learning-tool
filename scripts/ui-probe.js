@@ -418,6 +418,26 @@ function install(ctx) {
       };
     })()`);
 
+    // 加载态文案：点词后请求返回前，面板必须显示「思考中........」+ 转圈
+    out['5g 加载态文案'] = await run('5g', `(async () => {
+      const spans = document.querySelectorAll('#transcript .w');
+      const target = [...spans].find((s) => s.dataset.lower === 'pressure') || spans[0];
+      if (!target) return { error: '没有可点击的单词' };
+      target.click();
+      await new Promise((r) => setTimeout(r, 120));   // 抢在响应回来之前取样
+      const box = document.querySelector('#dictBody .dict-loading');
+      const res = {
+        clicked: target.dataset.lower,
+        loadingShown: !!box,
+        loadingText: box ? box.textContent : null,
+        spinnerCount: box ? box.querySelectorAll('.spinner').length : 0,
+        panelVisible: !document.getElementById('dictPanel').classList.contains('hidden')
+      };
+      await new Promise((r) => setTimeout(r, 5000));
+      res.replacedAfterLoad = !document.querySelector('#dictBody .dict-loading');
+      return res;
+    })()`);
+
     // 单词渲染诊断：是否出现了嵌套/重复的单词节点
     out['5f 单词节点结构'] = await run('5f', `(() => {
       const cues = [...document.querySelectorAll('#transcript .cue')];

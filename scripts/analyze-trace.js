@@ -50,7 +50,13 @@ if (i > 0) {
         if (!r) return false;
         return r.inlineChineseNodes === 0 && r.coloredWords === 0 && r.lockedWords >= 0;
       })()],
-      ['5a 点词出释义', obj['5a 点击单词 → 词典面板'] && obj['5a 点击单词 → 词典面板'].panelVisible]
+      ['5a 点词出释义', obj['5a 点击单词 → 词典面板'] && obj['5a 点击单词 → 词典面板'].panelVisible],
+      ['5g 加载态显示「思考中........」', (() => {
+        const r = obj['5g 加载态文案'];
+        if (!r) return false;
+        return r.loadingShown === true && r.loadingText === '思考中........'
+          && r.spinnerCount === 1 && r.panelVisible === true && r.replacedAfterLoad === true;
+      })()]
     ];
     console.log('\n=== 断言明细 ===');
     for (const [name, ok] of checks) console.log((ok ? 'PASS ' : 'FAIL ') + name);

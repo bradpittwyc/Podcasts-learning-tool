@@ -1300,7 +1300,22 @@ function runSmokeTest() {
       fs.writeFileSync(out2, shot2.toPNG());
       log('截图 3 已保存：' + out2);
 
-      // 第四张：词典标题区 1:1 裁剪（诊断“单词显示块”排版）
+      // 第四张：加载态（点词后请求返回前）—— 留档「思考中........」+ 转圈
+      const loadingClip = await js(`(() => {
+        const spans = [...document.querySelectorAll('#transcript .w')];
+        const t = spans.find((s) => s.dataset.lower === 'textbooks') || spans[Math.floor(spans.length / 2)];
+        if (t) t.click();
+        const r = document.getElementById('dictPanel').getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: 150 };
+      })()`).catch(() => null);
+      if (loadingClip) {
+        await new Promise((r) => setTimeout(r, 260));
+        const shotL = await mainWindow.webContents.capturePage(loadingClip);
+        fs.writeFileSync(out.replace(/\.png$/i, '-loading.png'), shotL.toPNG());
+        log('截图（加载态）：' + out.replace(/\.png$/i, '-loading.png'));
+      }
+
+      // 第五张：词典标题区 1:1 裁剪（诊断“单词显示块”排版）
       const headClip = await js(`(() => {
         const r = document.getElementById('dictPanel').getBoundingClientRect();
         return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: 70 };
