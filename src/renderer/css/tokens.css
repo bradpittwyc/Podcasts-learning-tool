@@ -1,0 +1,153 @@
+/* ══════════════════════════════════════════════════════════════
+   tokens.css — Windows 11 / WinUI 3 Fluent 设计标记
+   ══════════════════════════════════════════════════════════════ */
+:root {
+  /* 字体：UI 用 Segoe UI Variable，中文微软雅黑，英文正文 Times New Roman */
+  --font-ui: "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "微软雅黑", system-ui, sans-serif;
+  --font-ui-display: "Segoe UI Variable Display", "Segoe UI Semibold", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  --font-cn: "Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", sans-serif;
+  --font-en: "Times New Roman", Times, Georgia, "Nimbus Roman", serif;
+  --font-mono: "Cascadia Code", "Consolas", "SFMono-Regular", monospace;
+
+  /* 圆角 */
+  --radius-xs: 3px;
+  --radius-sm: 5px;
+  --radius-md: 8px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* 间距 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+
+  /* 动画 */
+  --ease-fluent: cubic-bezier(0.16, 1, 0.3, 1);
+  --dur-fast: 90ms;
+  --dur-mid: 200ms;
+  --dur-slow: 320ms;
+
+  --titlebar-h: 40px;
+  --commandbar-h: 48px;
+  --statusbar-h: 26px;
+  --transport-h: 96px;
+}
+
+/* ── 浅色（默认） ── */
+body[data-theme="light"] {
+  color-scheme: light;
+  --accent: #0f6cbd;
+  --accent-2: #115ea3;
+  --accent-hover: #0d5a9e;
+  --accent-press: #0b4c85;
+  --accent-light: #e5f0fa;
+  --accent-text: #ffffff;
+  --accent-glow: rgba(15, 108, 189, .22);
+
+  --bg-base: #eef1f6;
+  --bg-layer: #f8f9fc;
+  --bg-card: #ffffff;
+  --bg-card-alt: #f3f5f9;
+  --bg-subtle: #eceff5;
+  --bg-hover: rgba(0, 0, 0, .045);
+  --bg-press: rgba(0, 0, 0, .075);
+  --bg-selected: rgba(15, 108, 189, .12);
+  --bg-overlay: rgba(248, 249, 252, .82);
+
+  --text-1: rgba(0, 0, 0, .90);
+  --text-2: rgba(0, 0, 0, .62);
+  --text-3: rgba(0, 0, 0, .44);
+  --text-disabled: rgba(0, 0, 0, .28);
+
+  --stroke-1: rgba(0, 0, 0, .075);
+  --stroke-2: rgba(0, 0, 0, .12);
+  --stroke-strong: rgba(0, 0, 0, .22);
+  --divider: rgba(0, 0, 0, .07);
+
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, .08), 0 1px 3px rgba(0, 0, 0, .06);
+  --shadow-4: 0 2px 4px rgba(0, 0, 0, .09), 0 4px 12px rgba(0, 0, 0, .07);
+  --shadow-8: 0 8px 16px rgba(0, 0, 0, .12), 0 2px 6px rgba(0, 0, 0, .06);
+  --shadow-16: 0 16px 32px rgba(0, 0, 0, .16), 0 4px 12px rgba(0, 0, 0, .08);
+
+  --hl-target: #fff3c4;
+  --hl-target-border: #e8c86a;
+  --hl-queried: #d6ecff;
+  --hl-current: rgba(15, 108, 189, .14);
+}
+
+/* ── 深色 ── */
+body[data-theme="dark"] {
+  color-scheme: dark;
+  --accent: #4cc2ff;
+  --accent-2: #6cd0ff;
+  --accent-hover: #63cdff;
+  --accent-press: #3ab0ef;
+  --accent-light: rgba(76, 194, 255, .16);
+  --accent-text: #06263a;
+  --accent-glow: rgba(76, 194, 255, .26);
+
+  --bg-base: #17181c;
+  --bg-layer: #1f2025;
+  --bg-card: #26272d;
+  --bg-card-alt: #2b2c33;
+  --bg-subtle: #212228;
+  --bg-hover: rgba(255, 255, 255, .055);
+  --bg-press: rgba(255, 255, 255, .085);
+  --bg-selected: rgba(76, 194, 255, .16);
+  --bg-overlay: rgba(31, 32, 37, .82);
+
+  --text-1: rgba(255, 255, 255, .96);
+  --text-2: rgba(255, 255, 255, .72);
+  --text-3: rgba(255, 255, 255, .52);
+  --text-disabled: rgba(255, 255, 255, .32);
+
+  --stroke-1: rgba(255, 255, 255, .07);
+  --stroke-2: rgba(255, 255, 255, .11);
+  --stroke-strong: rgba(255, 255, 255, .20);
+  --divider: rgba(255, 255, 255, .08);
+
+  --shadow-2: 0 1px 2px rgba(0, 0, 0, .28);
+  --shadow-4: 0 2px 6px rgba(0, 0, 0, .34), 0 4px 14px rgba(0, 0, 0, .26);
+  --shadow-8: 0 8px 20px rgba(0, 0, 0, .42);
+  --shadow-16: 0 18px 40px rgba(0, 0, 0, .55);
+
+  --hl-target: rgba(255, 214, 102, .20);
+  --hl-target-border: rgba(255, 214, 102, .48);
+  --hl-queried: rgba(76, 194, 255, .18);
+  --hl-current: rgba(76, 194, 255, .14);
+}
+
+/* 难度色标（四级通用） */
+:root {
+  --lvl-a1: #6bbf59;
+  --lvl-a2: #8cc84b;
+  --lvl-b1: #e0b100;
+  --lvl-b2: #e08b00;
+  --lvl-c1: #d9534f;
+  --lvl-c2: #9b4fd9;
+  --lvl-native: #7a5af8;
+  --lvl-exam-ielts: #0aa2c0;
+  --lvl-exam-toefl: #2d7ff9;
+  --lvl-exam-gre: #8b5cf6;
+  --lvl-academic: #b45309;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 1ms !important; transition-duration: 1ms !important; }
+}
+
+/* 亚克力/云母背景装饰层（Electron setBackgroundMaterial 生效时提供半透明叠加） */
+body.backdrop-on .app-root::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: -1;
+  background:
+    radial-gradient(1200px 620px at 12% -8%, var(--accent-glow), transparent 62%),
+    radial-gradient(900px 520px at 108% 6%, rgba(122, 90, 248, .16), transparent 60%);
+  opacity: .9;
+}

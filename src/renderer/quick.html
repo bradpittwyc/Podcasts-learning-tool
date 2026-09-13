@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob: plt-media: file:; media-src 'self' plt-media: file: blob: data: https:; img-src 'self' data: blob:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; connect-src 'self' https:;" />
+<title>快捷查词</title>
+<link rel="stylesheet" href="css/tokens.css" />
+<link rel="stylesheet" href="css/app.css" />
+<link rel="stylesheet" href="css/transcript.css" />
+<link rel="stylesheet" href="css/panels.css" />
+</head>
+<body data-theme="light" style="background:transparent;overflow:hidden">
+  <div class="quick-root">
+    <div class="quick-head">
+      <span class="quick-title">屏幕取词</span>
+      <button class="icon-btn" id="qPin" title="置顶">📌</button>
+      <button class="icon-btn" id="qClose" title="关闭">&times;</button>
+    </div>
+    <div class="quick-body" id="qBody">
+      <div class="dict-loading"><div class="spinner"></div><span>等待文字…</span></div>
+    </div>
+    <div class="quick-foot">
+      <button class="ph-btn" id="qSpeak">🔊 朗读</button>
+      <button class="ph-btn" id="qSave">＋ 生词本</button>
+      <span style="flex:1"></span>
+      <span class="muted small" id="qLevel"></span>
+    </div>
+  </div>
+  <script src="js/util.js"></script>
+  <script src="js/subtitles.js"></script>
+  <script src="js/quick.js"></script>
+</body>
+</html>

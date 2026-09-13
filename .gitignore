@@ -1,0 +1,41 @@
+# 依赖与构建产物
+node_modules/
+release/
+dist/
+out/
+*.log
+npm-debug.log*
+yarn-error.log*
+
+# 便携模式 / 运行时数据（绝不入库）
+PodcastsLearningData/
+portable.flag
+portable-data/
+cache/
+*.tmp
+
+# 生成的示例媒体与验证截图（npm run sample 可随时重新生成）
+samples/
+
+# 用户媒体与字幕（避免误提交大文件）
+*.mp4
+*.mkv
+*.mp3
+*.wav
+*.m4a
+*.webm
+!build/**/*.png
+
+# 编辑器与系统
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# 其他
+*.local
+.env
+.env.*

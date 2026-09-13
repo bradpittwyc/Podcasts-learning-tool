@@ -1,0 +1,90 @@
+{
+  "name": "podcasts-learning-tool",
+  "productName": "Podcasts Learning Tool",
+  "version": "1.0.0",
+  "description": "英语学习神器 — 播放 MP4/MP3 与播客/视频字幕跟读，点击文字跳转时间戳，大模型分级取词查词典（雅思/托福/GRE/母语级）。",
+  "main": "src/main/main.js",
+  "author": {
+    "name": "bradpittwyc",
+    "email": "bradpittwyc@users.noreply.github.com"
+  },
+  "license": "MIT",
+  "private": false,
+  "keywords": [
+    "english-learning",
+    "podcast",
+    "shadowing",
+    "subtitle",
+    "electron",
+    "llm"
+  ],
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "smoke": "electron . --smoke-test",
+    "dist": "electron-builder --win --publish never",
+    "dist:portable": "electron-builder --win portable --publish never",
+    "dist:installer": "electron-builder --win nsis --publish never",
+    "dist:dir": "electron-builder --win --dir --publish never",
+    "test": "node scripts/selftest.js",
+    "test:ocr": "node scripts/ocr-selftest.js",
+    "sample": "node scripts/make-sample.js",
+    "icon": "node scripts/make-icon.js",
+    "fix-bom": "node scripts/fix-ps1-bom.js"
+  },
+  "devDependencies": {
+    "electron": "^33.2.1",
+    "electron-builder": "^25.1.8"
+  },
+  "build": {
+    "appId": "com.bradpittwyc.podcastlearning",
+    "productName": "Podcasts Learning Tool",
+    "copyright": "Copyright © 2025 bradpittwyc",
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "src/**/*",
+      "LICENSE",
+      "README.md",
+      "!**/*.map"
+    ],
+    "extraResources": [
+      {
+        "from": "scripts/ocr.ps1",
+        "to": "ocr.ps1"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": ["x64"]
+        },
+        {
+          "target": "portable",
+          "arch": ["x64"]
+        }
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Podcasts Learning Tool",
+      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "deleteAppDataOnUninstall": false
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}.${ext}",
+      "requestExecutionLevel": "user",
+      "unpackDirName": "PodcastsLearningTool"
+    },
+    "compression": "maximum",
+    "asar": true
+  }
+}
