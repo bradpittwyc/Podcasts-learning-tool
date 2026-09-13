@@ -124,9 +124,28 @@ function needsContext(entry) {
   return false;
 }
 
+/**
+ * 把词典的长释义压成「行内小注」。
+ * ECDICT 的 translation 是完整词条（n. 欢迎, 欢迎词；a. 受欢迎的…；[计] …），
+ * 直接塞进正文会让句子彻底读不下去 —— 这里只取第一个义项、第一个近义词，并限制长度。
+ * 完整释义仍会在词典面板里显示（translationFull）。
+ */
+function shortZh(zh, maxLen = 10) {
+  let s = String(zh || '').trim();
+  if (!s) return '';
+  s = s.replace(/\[[^\]]{1,8}\]/g, '');          // 去掉 [医] [计] [化] 等领域前缀
+  s = s.split(/[；;]/)[0];                        // 只取第一个义项
+  s = s.replace(/^[a-z]+\.\s*/i, '');             // 去掉 "n. " / "vt. " 前缀
+  s = s.split(/[，,]/)[0];                        // 只取第一个近义词
+  s = s.replace(/[、\s]+$/, '').trim();
+  if (s.length > maxLen) s = s.slice(0, maxLen) + '…';
+  return s;
+}
+
 /** 把紧凑数组展开成渲染进程用的对象 */
 function expand(entry, levelId) {
   if (!entry) return null;
+  const full = entry[6] || '';
   return {
     source: 'local',
     word: entry[0],
@@ -139,7 +158,8 @@ function expand(entry, levelId) {
     examLevels: entry[5] ? String(entry[5]).split(',').filter(Boolean) : [],
     isAcademic: !!entry[9],
     rare: !!entry[8],
-    translation: entry[6] || '',
+    translation: shortZh(full),      // 行内小注：短
+    translationFull: full,           // 面板里显示完整释义
     enDef: '',
     example: '',
     exampleZh: '',
@@ -215,4 +235,4 @@ function stats() {
   };
 }
 
-module.exports = { get, lookupBatch, meetsTier, needsContext, stats, candidateForms, ensureLoaded };
+module.exports = { get, lookupBatch, meetsTier, needsContext, stats, candidateForms, ensureLoaded, shortZh };

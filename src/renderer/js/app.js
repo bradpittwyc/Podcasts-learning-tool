@@ -50,6 +50,8 @@
   let levelWatchGeneration = 0;
   let openFilesHandler = null;
   let booted = false;
+  let autoScanTimer = null;    // 延迟触发的自动扫描
+  let autoScanPromise = null;  // 正在进行的扫描（供诊断/测试等待，避免撞车）
 
   // ══════════════════════════════════════════════════════════
   // 启动
@@ -170,8 +172,33 @@
       testLLM: () => window.PLT.settings.testLLM(),
       /** 直接调用取词引擎（端到端验证分级过滤与费用） */
       lookupWords: (items, options) => window.PLT.llm.lookup(items, options),
-      /** 只读诊断：查看本次会话的取词统计 */
+      /** 只读诊断：当前是否正在扫描 */
+      isScanning: () => !!lookup.scanning,
+      /** 只读诊断：本次会话的取词统计（请求数 / token / 估算费用） */
       costStats: () => ({ ...lookup.session, label: lookup.costLabel().text }),
+      /** 模拟点击「扫描难词」并等待完成（自动化测试用，避免与后台扫描撞车） */
+      scanNow: async () => {
+        if (autoScanTimer) { clearTimeout(autoScanTimer); autoScanTimer = null; }
+        if (autoScanPromise) { try { await autoScanPromise; } catch (_) { /* ignore */ } }
+        const res = await autoScan({ silent: true, force: true });
+        return res ? state.lastScan : (state.lastScan || null);
+      },
+      /** 只读诊断：查看级别锁定与词表状态 */
+      lockDiag: () => {
+        const spans = [...document.querySelectorAll('#transcript .w')];
+        return {
+          transcriptLock: { ...transcript.lock },
+          settingsLock: state.settings.lookup.lockLevel,
+          settingsLevel: state.settings.lookup.level,
+          wordMapSize: transcript.words.size,
+          wordMapSample: [...transcript.words.entries()].slice(0, 10).map(([k, v]) => ({ k, status: v && v.status, cefr: v && v.cefr })),
+          spanSample: spans.slice(0, 10).map((s) => ({ w: s.dataset.lower, cls: s.className, cefr: s.dataset.cefr })),
+          lockedSpans: spans.filter((s) => s.classList.contains('locked')).length,
+          hitSpans: spans.filter((s) => s.classList.contains('hit')).length,
+          lastScan: state.lastScan || null,
+          cueCount: transcript.getCues().length
+        };
+      },
       /** 模拟「文件夹导入」：走真实流程（扫描 → 弹列表 → 点击第 idx 行） */
       simulateFolderOpen: async (dir, idx = 0) => {
         window.__pltSmokeLog = [];
@@ -232,6 +259,7 @@
     document.body.classList.toggle('backdrop-on', !!s.ui.mica);
     if (!player || !transcript) return;
     transcript.setShowZh(!!s.ui.showChinese);
+    transcript.setLock(!!s.lookup.lockLevel, s.lookup.level);
     transcript.setAutoScroll(!!s.ui.autoScroll);
     $('#btnExpandAll').classList.toggle('on', !!s.ui.showChinese);
     $('#subtitleOverlay').classList.toggle('hidden-sub', !s.player.subtitleOverlay);
@@ -275,6 +303,7 @@
     const next = force === undefined ? !state.settings.lookup.lockLevel : !!force;
     await window.PLT.settings.patch({ lookup: { lockLevel: next } });
     state.settings = await window.PLT.settings.get();
+    transcript.setLock(next, state.settings.lookup.level);
     paintLockButton();
     toast(next
       ? `已锁定：低于「${levelLabelText()}」的单词不可取词`
@@ -891,7 +920,7 @@
     updateSubtitleButton();
     if (state.settings.lookup.autoScan && res.cues.length) {
       // 等 UI 稳定后再扫描，避免卡顿
-      setTimeout(() => autoScan({ silent: true }), 500);
+      scheduleAutoScan(500);
     } else {
       toast('字幕已加载。点击任意英文单词即可查词，或按 Ctrl+Shift+D 扫描全文难词。', 'ok', 5200);
     }
@@ -1158,6 +1187,9 @@
   // 分级取词
   // ══════════════════════════════════════════════════════════
   async function onWordClick(word, cue, span) {
+    // 级别锁定：低级别词是不可点击状态 —— 完全静默，不弹面板、不查询、不提示
+    if (span && span.classList.contains('locked')) return;
+
     // 单击：面板查询（手动点击忽略级别过滤）；已扫描过的词直接渲染，零成本
     $$('.w.active').forEach((n) => n.classList.remove('active'));
     if (span) span.classList.add('active');
@@ -1256,52 +1288,75 @@
 
   async function autoScan(opts) {
     const cues = transcript.getCues();
-    if (!cues.length) { if (!(opts && opts.silent)) toast('没有字幕可扫描', 'warn'); return; }
-    if (!state.settings.lookup.autoScan && !(opts && opts.force)) return;
+    if (!cues.length) { if (!(opts && opts.silent)) toast('没有字幕可扫描', 'warn'); return null; }
+    if (!state.settings.lookup.autoScan && !(opts && opts.force)) return null;
 
     // 本地词典模式：不需要 API Key，0 费用、毫秒级；AI 只处理「本地没有 / 需要语境」的少数难词
     const useLocal = state.settings.lookup.localDict !== false;
     const onlyLocal = !!(opts && opts.onlyLocal);
     if (!useLocal && !state.settings.llm.hasApiKey) {
       if (!(opts && opts.silent)) toast('请先在设置里配置大模型 API Key（或打开本地词典）', 'warn');
-      return;
+      return null;
     }
 
-    const gen = ++levelWatchGeneration;
-    const label = $('#scanLabel');
-    label.textContent = '扫描中…';
-    $('#btnScanAll').classList.add('on');
-    const res = await lookup.scanAll(cues, {
-      level: state.settings.lookup.level,
-      limit: state.settings.lookup.autoScanLimit,
-      onlyLocal
-    });
-    label.textContent = '扫描难词';
-    $('#btnScanAll').classList.remove('on');
-    if (gen !== levelWatchGeneration) return;
-    if (!res) return;
+    const run = (async () => {
+      const gen = ++levelWatchGeneration;
+      const label = $('#scanLabel');
+      label.textContent = '扫描中…';
+      $('#btnScanAll').classList.add('on');
+      const res = await lookup.scanAll(cues, {
+        level: state.settings.lookup.level,
+        limit: state.settings.lookup.autoScanLimit,
+        onlyLocal
+      });
+      label.textContent = '扫描难词';
+      $('#btnScanAll').classList.remove('on');
+      // 诊断记录：即使被更新的扫描取代，也保留本次结果
+      state.lastScan = res ? {
+        level: state.settings.lookup.level,
+        stats: res.stats,
+        mapSize: res.map ? res.map.size : 0,
+        locked: res.map ? [...res.map.values()].filter((v) => v.status === 'blocked').length : 0,
+        hits: res.map ? [...res.map.values()].filter((v) => v.status === 'hit').length : 0
+      } : { skipped: 'scanAll 返回 null（已有扫描在进行中）' };
+      if (gen !== levelWatchGeneration) return res;
+      if (!res) return null;
 
-    transcript.setWords(res.map);
-    const hits = [...res.map.values()].filter((v) => v.status === 'hit').length;
-    paintCost();
+      transcript.setWords(res.map);
+      const hits = [...res.map.values()].filter((v) => v.status === 'hit').length;
+      paintCost();
 
-    const s = res.stats || {};
-    const lvShort = lookup.levels.find((l) => l.id === state.settings.lookup.level)?.short || '';
-    const costInfo = s.usage
-      ? ` · AI 分析 ${s.llmWords || 0} 词/${s.usage.total_tokens} tokens（约 ¥${((s.usage.prompt_tokens || 0) * 0.14e-6 + (s.usage.completion_tokens || 0) * 0.28e-6).toFixed(4)}）`
-      : ' · 全程本地词典，0 费用';
-    const msg = `扫描完成：${s.scannedLines} 行 / ${s.uniqueWords} 个不同单词 → 标出 ${hits} 个「${lvShort}」及以上难词（本地命中 ${s.localHits || 0}）${costInfo}`;
+      const s = res.stats || {};
+      const lvShort = lookup.levels.find((l) => l.id === state.settings.lookup.level)?.short || '';
+      const costInfo = s.usage
+        ? ` · AI 分析 ${s.llmWords || 0} 词/${s.usage.total_tokens} tokens（约 ¥${((s.usage.prompt_tokens || 0) * 0.14e-6 + (s.usage.completion_tokens || 0) * 0.28e-6).toFixed(4)}）`
+        : ' · 全程本地词典，0 费用';
+      const msg = `扫描完成：${s.scannedLines} 行 / ${s.uniqueWords} 个不同单词 → 标出 ${hits} 个「${lvShort}」及以上难词（本地命中 ${s.localHits || 0}）${costInfo}`;
 
-    if (!(opts && opts.silent)) toast(msg, 'ok', 6500);
-    else if (hits) toast(`已自动标出 ${hits} 个难词（${lvShort} 及以上）${s.usage ? '' : ' · 本地词典，0 费用'}`, 'ok', 5200);
-    if (s.blockedCount) toast(`级别锁定：拦截了 ${s.blockedCount} 个低于级别的词`, 'warn', 4200);
+      if (!(opts && opts.silent)) toast(msg, 'ok', 6500);
+      else if (hits) toast(`已自动标出 ${hits} 个难词（${lvShort} 及以上）${s.usage ? '' : ' · 本地词典，0 费用'}`, 'ok', 5200);
+      if (s.blockedCount) toast(`级别锁定：标记了 ${s.blockedCount} 个低于级别的词为不可取词`, 'warn', 4200);
 
-    $('#sbCost').title = [
-      `本地词典命中：${s.localHits || 0} 词（免费）`,
-      `AI 分析：${s.llmWords || 0} 词`,
-      `API 请求：${s.toApi || 0} 次，缓存命中 ${s.fromCache || 0} 词`,
-      s.blockedCount ? `级别锁定拦截：${s.blockedCount} 词` : null
-    ].filter(Boolean).join('\n');
+      $('#sbCost').title = [
+        `本地词典命中：${s.localHits || 0} 词（免费）`,
+        `AI 分析：${s.llmWords || 0} 词`,
+        `API 请求：${s.toApi || 0} 次，缓存命中 ${s.fromCache || 0} 词`,
+        s.blockedCount ? `级别锁定拦截：${s.blockedCount} 词` : null
+      ].filter(Boolean).join('\n');
+      return res;
+    })();
+
+    autoScanPromise = run;
+    try { return await run; } finally { if (autoScanPromise === run) autoScanPromise = null; }
+  }
+
+  /** 延迟自动扫描：切换级别/加载字幕后调用，重复调用只保留最后一次 */
+  function scheduleAutoScan(delay) {
+    if (autoScanTimer) clearTimeout(autoScanTimer);
+    autoScanTimer = setTimeout(() => {
+      autoScanTimer = null;
+      autoScan({ silent: true });
+    }, delay || 500);
   }
 
   function paintCost() {

@@ -119,9 +119,12 @@
             source: v.source || (v.enDef ? 'ai' : 'local')
           });
         }
-        // 低于级别的词：锁定则完全不显示；未锁定则保留等级信息但不标为“难词”
+        // 低于级别的词：锁定 → 标记为 blocked（前台呈现为不可点击）；未锁定 → 保留等级信息但不标为“难词”
         for (const [k, v] of Object.entries(res.below || {})) {
-          if (v && v.reason === 'locked') continue;
+          if (v && v.reason === 'locked') {
+            map.set(k, { status: 'blocked', cefr: v.cefr || '', examLevels: v.examLevels || [], translation: '' });
+            continue;
+          }
           map.set(k, { ...(v || {}), status: 'below', translation: (v && v.translation) || '' });
         }
         for (const [k, v] of Object.entries(res.skipped || {})) {
@@ -271,7 +274,7 @@
           el('h4', { text: '中文释义' }),
           el('div', { class: 'dict-trans' }, [
             entry.pos ? el('span', { class: 'dict-pos', text: entry.pos }) : null,
-            document.createTextNode(entry.translation)
+            document.createTextNode(entry.translationFull && entry.translationFull.length > entry.translation.length ? entry.translationFull : entry.translation)
           ])
         ]));
       } else if (entry.source === 'local') {

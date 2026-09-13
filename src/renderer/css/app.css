@@ -88,10 +88,23 @@ button { cursor: default; border: none; background: none; }
 @keyframes pulse { 50% { opacity: .35; } }
 
 /* ── 播放/暂停图标交换（暂停时=三角，播放中=两道竖）──
-   采用 visibility 切换而非 display：不用和任何 display 规则比优先级，
-   图标始终占位，不会出现两个图形同时显示的错乱。 */
-#btnPlay svg, #trPlay svg, #miniPlay svg { display: block; fill: currentColor; }
-#btnSettings svg, .lock-btn svg { display: block; }
+   关键：两个 SVG 必须**重叠在同一格**（grid-area: 1/1）。
+   早期版本让它们各占一行，于是三角偏上 8px、竖条偏下 8px，切换时看着上下乱跳。
+   这里同时锁死尺寸与居中，避免撑高布局或受 line-height 影响。 */
+#btnPlay svg, #trPlay svg, #miniPlay svg, .lock-btn svg {
+  display: block;
+  width: var(--icon-size, 18px);
+  height: var(--icon-size, 18px);
+  grid-area: 1 / 1;
+  place-self: center;
+  fill: currentColor;
+  overflow: visible;
+}
+#btnPlay { --icon-size: 20px; }
+#trPlay { --icon-size: 19px; }
+#miniPlay { --icon-size: 16px; }
+.lock-btn { --icon-size: 15px; }
+#btnSettings svg { display: block; width: 18px; height: 18px; }
 
 #btnPlay .ic-pause, #trPlay .ic-pause, #miniPlay .ic-pause { visibility: hidden; }
 body.is-playing #btnPlay .ic-play,
@@ -101,6 +114,7 @@ body.is-playing #btnPlay .ic-pause,
 body.is-playing #trPlay .ic-pause,
 body.is-playing #miniPlay .ic-pause { visibility: visible; }
 
+/* 级别锁：同样两张图标重叠，锁定状态只切换可见性，位置绝不动 */
 .lock-btn .ic-locked { visibility: hidden; }
 .lock-btn.locked .ic-unlocked { visibility: hidden; }
 .lock-btn.locked .ic-locked { visibility: visible; }

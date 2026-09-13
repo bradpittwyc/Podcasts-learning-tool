@@ -327,7 +327,7 @@
     const startDrag = (e) => {
       if (!player.duration) return;
       dragging = true;
-      seekbar.setPointerCapture && seekbar.setPointerCapture(e.pointerId);
+      try { seekbar.setPointerCapture(e.pointerId); } catch (_) { /* 合成事件没有真实 pointer，忽略 */ }
       player.seek(timeFromEvent(e));
     };
     const moveDrag = (e) => { if (dragging) player.seek(timeFromEvent(e)); };

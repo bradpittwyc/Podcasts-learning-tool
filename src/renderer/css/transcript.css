@@ -133,6 +133,16 @@
 .w.hit:hover { background: var(--accent-light); }
 .w.queried { background: var(--hl-queried); }
 .w.active { background: var(--accent); color: var(--accent-text); }
+/* 级别锁定：呈现为不可点击（灰掉 + 禁用光标），而不是点了弹提示框 */
+.w.locked {
+  cursor: not-allowed;
+  color: var(--text-3);
+  background: transparent;
+  text-decoration: line-through;
+  text-decoration-color: color-mix(in srgb, var(--text-3) 55%, transparent);
+  text-decoration-thickness: 1px;
+}
+.w.locked:hover { background: transparent; color: var(--text-3); }
 .w.loading {
   background: linear-gradient(90deg, var(--bg-subtle), var(--accent-light), var(--bg-subtle));
   background-size: 200% 100%;
@@ -278,14 +288,47 @@ body[data-theme="dark"] .tag.b1 { color: var(--lvl-b1); }
 @keyframes dict-in { from { transform: translateX(22px); opacity: 0; } }
 .dict-head {
   flex: none;
-  display: flex; align-items: flex-start; gap: var(--sp-2);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-items: start;
+  column-gap: 8px;
+  row-gap: 7px;
   padding: 12px 12px 10px 14px;
   border-bottom: 1px solid var(--divider);
 }
-.dict-word-wrap { display: flex; align-items: baseline; gap: 9px; flex-wrap: wrap; flex: 1; min-width: 0; }
-.dict-word { font-family: var(--font-en); font-size: 24px; font-weight: 700; letter-spacing: .2px; }
-.dict-phonetic { font-family: var(--font-en); font-size: 13.5px; color: var(--text-3); }
-.dict-tags { display: flex; gap: 4px; flex-wrap: wrap; width: 100%; margin-top: 6px; }
+/* 第一行：单词 + 音标（两侧留位给关闭按钮） */
+.dict-word-wrap {
+  grid-column: 1;
+  grid-row: 1;
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  min-width: 0;
+}
+.dict-word {
+  font-family: var(--font-en);
+  font-size: 23px;
+  font-weight: 700;
+  line-height: 1.15;
+  letter-spacing: 0;
+  /* 避免 Times 合成粗体导致的“发虚/重影” */
+  font-synthesis: none;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+.dict-phonetic { font-family: var(--font-en); font-size: 13px; color: var(--text-3); white-space: nowrap; }
+/* 第二行：整行都是标签，绝不与单词重叠 */
+.dict-tags {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  display: flex;
+  gap: 5px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin: 0;
+}
 .dict-body { flex: 1; overflow-y: auto; padding: 12px 14px 18px; user-select: text; }
 .dict-empty { color: var(--text-3); font-size: 12.5px; text-align: center; padding: 26px 10px; line-height: 1.7; }
 .dict-sec { margin-bottom: 13px; }

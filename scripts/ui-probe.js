@@ -105,19 +105,64 @@ function install(ctx) {
       return { ...st, paused: document.getElementById('video').paused };
     })()`);
 
-    out['1d 三个播放按钮图标是否同步'] = await run('1d', `(() => {
-      const vis = (sel) => {
-        const el = document.querySelector(sel);
-        if (!el) return 'missing';
-        return getComputedStyle(el).display !== 'none';
+    // 图标几何：检查三角与竖条是否真正居中、且切换时不跳动
+    const geom = `(async () => {
+      const btn = document.getElementById('btnPlay');
+      const v = document.getElementById('video');
+      const snap = () => {
+        const btnRect = btn.getBoundingClientRect();
+        const r = (sel) => {
+          const el = btn.querySelector(sel);
+          if (!el) return null;
+          const b = el.getBoundingClientRect();
+          return { w: +b.width.toFixed(2), h: +b.height.toFixed(2), cx: +(b.left + b.width / 2).toFixed(2), cy: +(b.top + b.height / 2).toFixed(2) };
+        };
+        return {
+          btn: { w: +btnRect.width.toFixed(2), h: +btnRect.height.toFixed(2), cx: +(btnRect.left + btnRect.width / 2).toFixed(2), cy: +(btnRect.top + btnRect.height / 2).toFixed(2) },
+          play: r('.ic-play'),
+          pause: r('.ic-pause'),
+          playing: document.body.classList.contains('is-playing')
+        };
       };
-      return {
-        btnPauseVisible: vis('#btnPlay .ic-pause'),
-        trPauseVisible: vis('#trPlay .ic-pause'),
-        miniPauseVisible: vis('#miniPlay .ic-pause'),
-        allSynced: vis('#btnPlay .ic-pause') === vis('#trPlay .ic-pause') && vis('#btnPlay .ic-pause') === vis('#miniPlay .ic-pause')
+      const out = {};
+      out.playing = snap();
+      v.pause(); await new Promise((res) => setTimeout(res, 500));
+      out.paused = snap();
+      // 也看看传输栏那个播放按钮
+      const tr = document.getElementById('trPlay');
+      const trRect = tr.getBoundingClientRect();
+      const trIcon = tr.querySelector('.ic-play').getBoundingClientRect();
+      out.transport = {
+        btnCy: +(trRect.top + trRect.height / 2).toFixed(2),
+        iconCy: +(trIcon.top + trIcon.height / 2).toFixed(2),
+        diff: +((trIcon.top + trIcon.height / 2) - (trRect.top + trRect.height / 2)).toFixed(2)
       };
+      v.play().catch(() => {});
+      return out;
+    })()`;
+
+    out['1e 播放图标几何'] = await run('1e', geom);
+    out['1e'] = out['1e 播放图标几何'];
+    out['1e 几何判定'] = await run('1e-geo', `(() => {
+      const g = window.__pltLastGeom || null;
+      return g;
     })()`);
+    const geo = out['1e 播放图标几何'];
+    if (geo && geo.playing && geo.paused) {
+      out['1e 判定'] = {
+        playCy_playing: geo.playing.play.cy,
+        playCy_paused: geo.paused.play.cy,
+        pauseCy_playing: geo.playing.pause.cy,
+        pauseCy_paused: geo.paused.pause.cy,
+        btnCy: geo.playing.btn.cy,
+        jumpWhenToggling: +(geo.paused.play.cy - geo.playing.play.cy).toFixed(2),
+        playOffCenterY: +(geo.playing.play.cy - geo.playing.btn.cy).toFixed(2),
+        pauseOffCenterY: +(geo.playing.pause.cy - geo.playing.btn.cy).toFixed(2),
+        playOffCenterX: +(geo.playing.play.cx - geo.playing.btn.cx).toFixed(2),
+        pauseOffCenterX: +(geo.playing.pause.cx - geo.playing.btn.cx).toFixed(2),
+        transportDiff: geo.transport ? geo.transport.diff : null
+      };
+    }
 
     // ───────── 2. 进度条拖动 ─────────
     out['2a 进度条几何'] = await run('2a', `(() => {
@@ -328,52 +373,123 @@ function install(ctx) {
     out['5d 计费链路诊断'] = await run('5d', `(() => ({
       trackLog: window.__pltProbe.trackLog || [],
       stats: window.__pltSmoke.costStats(),
-      sbCostText: document.getElementById('sbCost').textContent,
-      rawLookupShape: window.__lastLookupShape || null
+      sbCostText: document.getElementById('sbCost').textContent
     }))()`);
 
-    // ───────── 6. 级别锁定（低于所选级别的词不可取词）─────────
-    out['6a 锁定按钮'] = await run('6a', `(async () => {
-      const btn = document.getElementById('btnLockLevel');
-      const before = { locked: btn.classList.contains('locked'), title: btn.getAttribute('title') };
-      btn.click();
-      await new Promise((r) => setTimeout(r, 900));
+    // 词典标题区的排版诊断（用户反馈“单词显示块有问题”）
+    out['5e 词典标题排版'] = await run('5e', `(() => {
+      const wordEl = document.getElementById('dictWord');
+      const wrap = document.querySelector('.dict-word-wrap');
+      const cs = getComputedStyle(wordEl);
+      const r = wordEl.getBoundingClientRect();
+      return {
+        text: wordEl.textContent,
+        childNodes: [...wordEl.childNodes].map((n) => (n.nodeType === 3 ? 'text:' + n.textContent : n.nodeName + ':' + n.textContent)),
+        fontFamily: cs.fontFamily, fontSize: cs.fontSize, fontWeight: cs.fontWeight,
+        letterSpacing: cs.letterSpacing, lineHeight: cs.lineHeight,
+        rect: { w: +r.width.toFixed(1), h: +r.height.toFixed(1) },
+        wrapDisplay: getComputedStyle(wrap).display,
+        wrapFlexWrap: getComputedStyle(wrap).flexWrap,
+        inlineWordCount: document.querySelectorAll('#dictWord span').length
+      };
+    })()`);
+
+    // ───────── 6. 级别锁定（低于所选级别的词呈现为不可点击）─────────
+    out['6a 切到 B2 + 锁定'] = await run('6a', `(async () => {
+      // 选 B2 级别（大量常用词会低于它），再打开锁定
+      const sel = document.getElementById('levelSelect');
+      const before = { locked: document.getElementById('btnLockLevel').classList.contains('locked') };
+      sel.value = 'b2';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 1200));
+      document.getElementById('btnLockLevel').click();
+      await new Promise((r) => setTimeout(r, 1200));
       const s = await window.PLT.settings.get();
       return {
         before,
-        afterLocked: btn.classList.contains('locked'),
-        setting: s.lookup.lockLevel,
         level: s.lookup.level,
-        ariaPressed: btn.getAttribute('aria-pressed')
+        lockLevel: s.lookup.lockLevel,
+        btnLocked: document.getElementById('btnLockLevel').classList.contains('locked'),
+        ariaPressed: document.getElementById('btnLockLevel').getAttribute('aria-pressed')
       };
     })()`);
 
-    // 锁定时点击低级别词 → 应被拦截，不产生任何请求
-    out['6b 锁定后点低级别词'] = await run('6b', `(async () => {
+    // 锁定时：低于级别的词应**预先**呈现为不可点击（无需先点一次）
+    out['6b0 锁定后扫描原始返回'] = await run('6b0', `(async () => {
+      const cues = window.__pltSmoke.cues.map((c) => ({ start: c.start, end: c.end, en: c.en, zh: c.zh, text: c.text }));
+      const res = await window.PLT.llm.scanTranscript(cues, { level: 'b2', limit: 400 });
+      const keys = (o) => Object.keys(o || {}).length;
+      return {
+        ok: res.ok,
+        error: res.error,
+        code: res.code,
+        scannedLines: res.scannedLines,
+        uniqueWords: res.uniqueWords,
+        entries: keys(res.entries),
+        below: keys(res.below),
+        blocked: keys(res.blocked),
+        skipped: keys(res.skipped),
+        localHits: res.localHits,
+        llmWords: res.llmWords,
+        blockedCount: res.blockedCount,
+        sampleBelow: Object.entries(res.below || {}).slice(0, 4),
+        sampleEntries: Object.keys(res.entries || {}).slice(0, 6)
+      };
+    })()`);
+
+    out['6b 低级别词呈禁用态'] = await run('6b', `(async () => {
       const before = window.__pltSmoke.costStats();
-      // 先关闭词典面板，重新点一个明显低于托福级别的词（如 heritage / thrive）
+      const scan = await window.__pltSmoke.scanNow();
+      const spans = [...document.querySelectorAll('#transcript .w')];
+      const locked = spans.filter((s) => s.classList.contains('locked'));
+      const sample = locked.slice(0, 8).map((s) => ({
+        w: s.dataset.lower, cefr: s.dataset.cefr,
+        cursor: getComputedStyle(s).cursor,
+        struck: getComputedStyle(s).textDecorationLine.includes('line-through'),
+        hasTitle: !!s.title
+      }));
+      return {
+        totalWords: spans.length,
+        lockedCount: locked.length,
+        hitCount: spans.filter((s) => s.classList.contains('hit')).length,
+        sample,
+        allNotAllowed: sample.length > 0 && sample.every((s) => s.cursor === 'not-allowed' && s.struck),
+        scan,
+        diag: window.__pltSmoke.lockDiag()
+      };
+    })()`);
+
+    // 点击锁定词：应无面板、无请求、无提示
+    out['6b2 点锁定词无反应'] = await run('6b2', `(async () => {
+      const before = window.__pltSmoke.costStats();
       document.getElementById('dictPanel').classList.add('hidden');
       document.getElementById('paneBody').classList.remove('dict-open');
-      const spans = [...document.querySelectorAll('#transcript .w')];
-      const target = spans.find((s) => ['heritage', 'thrive', 'fragile', 'nutrients'].includes(s.dataset.lower)) || spans[0];
+      const target = [...document.querySelectorAll('#transcript .w.locked')][0];
+      if (!target) return { error: '没有锁定词可点' };
       target.click();
-      await new Promise((r) => setTimeout(r, 2200));
+      await new Promise((r) => setTimeout(r, 1500));
       const after = window.__pltSmoke.costStats();
       return {
         clicked: target.dataset.lower,
+        cefr: target.dataset.cefr,
         panelVisible: !document.getElementById('dictPanel').classList.contains('hidden'),
-        body: document.getElementById('dictBody').textContent.replace(/\\s+/g, ' ').slice(0, 200),
-        tags: [...document.querySelectorAll('#dictTags .tag')].map((t) => t.textContent),
-        apiCallsDelta: after.calls - before.calls
+        apiCallsDelta: after.calls - before.calls,
+        toastCount: document.querySelectorAll('#toastHost .toast').length
       };
     })()`);
 
-    // 解锁，恢复默认
-    out['6c 解锁'] = await run('6c', `(async () => {
+    // 解锁 + 恢复级别，确认词重新可点
+    out['6c 解锁后恢复可点'] = await run('6c', `(async () => {
       document.getElementById('btnLockLevel').click();
-      await new Promise((r) => setTimeout(r, 800));
+      await new Promise((r) => setTimeout(r, 1200));
+      const spans = [...document.querySelectorAll('#transcript .w')];
+      const locked = spans.filter((s) => s.classList.contains('locked')).length;
+      const sel = document.getElementById('levelSelect');
+      sel.value = 'toefl';
+      sel.dispatchEvent(new Event('change', { bubbles: true }));
+      await new Promise((r) => setTimeout(r, 1200));
       const s = await window.PLT.settings.get();
-      return { lockLevel: s.lookup.lockLevel, btnLocked: document.getElementById('btnLockLevel').classList.contains('locked') };
+      return { level: s.lookup.level, lockLevel: s.lookup.lockLevel, lockedWordsAfterUnlock: locked };
     })()`);
 
     return out;

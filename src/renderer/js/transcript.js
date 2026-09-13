@@ -11,6 +11,10 @@
   const S = window.PLTSubs;
   const { el, clear, clamp, toast } = U;
 
+  // 级别 → 难度 rank 对照（模块级，供 setLock / isLockedOut 共用）
+  const LEVEL_RANK = { none: 0, a2: 2, b1: 3, b2: 4, ielts: 5, toefl: 5, gre: 6, educated_native: 7 };
+  const CEFR_RANK = { A1: 0, A2: 2, B1: 3, B2: 4, C1: 5, C2: 6 };
+
   class Transcript {
     constructor(root, opts) {
       this.root = root;
@@ -26,7 +30,26 @@
       this.words = new Map();   // lower(含词形) -> 词典信息
       this.path = null;
       this._userScrolledAt = 0;
+      // 级别锁定：决定哪些词直接呈现为“不可点击”
+      this.lock = { enabled: false, rank: 0 };
       this.bindEvents();
+    }
+
+    /** 设置级别锁定状态（enabled + 目标级别），并立即重算所有词的锁定样式 */
+    setLock(enabled, levelId) {
+      this.lock = { enabled: !!enabled, rank: LEVEL_RANK[String(levelId || 'none')] ?? 0 };
+      this.refreshWordStyles();
+    }
+
+    /** 某词是否因级别锁定而不可取词 */
+    isLockedOut(info) {
+      if (!this.lock.enabled || this.lock.rank <= 0) return false;
+      if (!info) return false;
+      if (info.status === 'hit') return false;                 // 已判定为达标词
+      let rank = CEFR_RANK[String(info.cefr || '').toUpperCase()];
+      if (rank === undefined) rank = info.rare ? 7 : 3;
+      if (info.rare) rank = Math.max(rank, 7);
+      return rank < this.lock.rank;
     }
 
     // ─────────────── 事件 ───────────────
@@ -159,8 +182,9 @@
           continue;
         }
         const info = this.lookupWord(part.lower);
+        const blocked = info && info.status === 'blocked';
         const span = el('span', {
-          class: `w${info ? (info.status === 'hit' ? ' hit' : info.status === 'queried' ? ' queried' : '') : ''}`,
+          class: `w${info ? (info.status === 'hit' ? ' hit' : info.status === 'queried' ? ' queried' : blocked ? ' locked' : '') : ''}`,
           dataset: { lower: part.lower, word: part.text }
         });
         span.appendChild(document.createTextNode(part.text));
@@ -168,6 +192,7 @@
           span.appendChild(el('span', { class: 'wz', text: info.translation }));
         }
         if (info && info.cefr && !this.opts.hideLevelBadge) span.dataset.cefr = info.cefr;
+        if (blocked) span.title = `低于当前取词级别（${info.cefr || '—'}）· 级别锁定中，不可取词`;
         container.appendChild(span);
       }
     }
@@ -220,10 +245,20 @@
     }
 
     applyWordStyle(span, info) {
-      span.classList.remove('hit', 'queried', 'loading');
+      span.classList.remove('hit', 'queried', 'loading', 'locked');
+      span.removeAttribute('title');
       const old = span.querySelector('.wz');
       if (old) old.remove();
       if (!info) { delete span.dataset.cefr; return; }
+      if (info.cefr) span.dataset.cefr = info.cefr;
+      else delete span.dataset.cefr;
+
+      // 级别锁定优先：低于所选级别的词直接呈现为不可点击
+      if (info.status !== 'hit' && this.isLockedOut(info)) {
+        span.classList.add('locked');
+        span.title = `低于当前取词级别（${info.cefr || '—'}）· 级别锁定中，不可取词`;
+        return;
+      }
       if (info.status === 'hit') {
         span.classList.add('hit');
         if (info.translation) span.appendChild(el('span', { class: 'wz', text: info.translation }));
@@ -231,10 +266,10 @@
         span.classList.add('queried');
       } else if (info.status === 'loading') {
         span.classList.add('loading');
+      } else if (info.status === 'blocked') {
+        span.classList.add('locked');
+        span.title = `低于当前取词级别（${info.cefr || '—'}）· 级别锁定中，不可取词`;
       }
-      // status === 'below'：已知低于目标级别，不高亮（省钱的可视化结果）
-      if (info.cefr) span.dataset.cefr = info.cefr;
-      else delete span.dataset.cefr;
     }
 
     // ─────────────── 选中 / 同步 ───────────────

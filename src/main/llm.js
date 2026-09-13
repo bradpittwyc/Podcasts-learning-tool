@@ -580,35 +580,45 @@ async function lookupTiered(requests, options = {}) {
   });
   if (needLlm.length) {
     const t0 = Date.now();
-    const aiRes = await lookupBatch(needLlm, {
-      level: levelId,
-      applyLevelFilter: false,     // 分级过滤已由本地词典完成
-      force: true,
-      batchSize: options.batchSize,
-      topic: options.topic
-    });
-    result.ms += Date.now() - t0;
-    result.stats.aiCalls += aiRes.toApi || 0;
-    result.stats.aiSkippedByCache += aiRes.fromCache || 0;
-    result.stats.llmWords = needLlm.length;
-    if (aiRes.usage) {
-      result.usage = result.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
-      result.usage.prompt_tokens += aiRes.usage.prompt_tokens || 0;
-      result.usage.completion_tokens += aiRes.usage.completion_tokens || 0;
-      result.usage.total_tokens += aiRes.usage.total_tokens || 0;
-    }
-    // AI 结果覆盖本地（AI 有语境，质量更高）
-    for (const [k, v] of Object.entries(aiRes.entries || {})) {
-      result.entries[k] = { ...(result.entries[k] || {}), ...v, source: 'ai', needContext: false };
-    }
-    for (const [k, v] of Object.entries(aiRes.skipped || {})) {
-      const localEntry = result.entries[k];
-      if (localEntry) {
-        // 本地已有释义：保留，只标记 AI 认为不需要额外解释
-        localEntry.needContext = false;
-        continue;
+    try {
+      const aiRes = await lookupBatch(needLlm, {
+        level: levelId,
+        applyLevelFilter: false,     // 分级过滤已由本地词典完成
+        force: true,
+        batchSize: options.batchSize,
+        topic: options.topic
+      });
+      result.ms += Date.now() - t0;
+      result.stats.aiCalls += aiRes.toApi || 0;
+      result.stats.aiSkippedByCache += aiRes.fromCache || 0;
+      result.stats.llmWords = needLlm.length;
+      if (aiRes.usage) {
+        result.usage = result.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 };
+        result.usage.prompt_tokens += aiRes.usage.prompt_tokens || 0;
+        result.usage.completion_tokens += aiRes.usage.completion_tokens || 0;
+        result.usage.total_tokens += aiRes.usage.total_tokens || 0;
       }
-      result.skipped[k] = v;
+      // AI 结果覆盖本地（AI 有语境，质量更高）
+      for (const [k, v] of Object.entries(aiRes.entries || {})) {
+        result.entries[k] = { ...(result.entries[k] || {}), ...v, source: 'ai', needContext: false };
+      }
+      for (const [k, v] of Object.entries(aiRes.skipped || {})) {
+        const localEntry = result.entries[k];
+        if (localEntry) {
+          // 本地已有释义：保留，只标记 AI 认为不需要额外解释
+          localEntry.needContext = false;
+          continue;
+        }
+        result.skipped[k] = v;
+      }
+    } catch (err) {
+      // 关键：AI 失败（无 Key / 401 / 余额不足 / 网络问题）不能丢掉已经算好的本地结果。
+      // 本地词典覆盖了绝大多数词，AI 只是锦上添花。
+      result.stats.llmWords = needLlm.length;
+      result.stats.aiFailed = needLlm.length;
+      result.aiError = { code: err.code || 'ERROR', message: err.message };
+      result.ok = true;
+      result.partial = true;
     }
   }
 

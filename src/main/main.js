@@ -167,6 +167,7 @@ function parseRange(header, size) {
 
 function registerMediaProtocol() {
   protocol.handle('plt-media', async (request) => {
+    let stream = null;
     try {
       const abs = pathFromMediaUrl(request.url);
       if (!path.isAbsolute(abs)) return new Response('bad path', { status: 400 });
@@ -182,13 +183,16 @@ function registerMediaProtocol() {
       // 无 Range：返回完整文件，但声明支持 Range（这是 seek 的前提）
       if (!rangeHeader) {
         const body = isHead ? null : fs.createReadStream(abs);
-        const headers = {
-          'Content-Type': type,
-          'Content-Length': String(size),
-          'Accept-Ranges': 'bytes',
-          'Cache-Control': 'no-store'
-        };
-        return new Response(body, { status: 200, headers });
+        if (body) body.on('error', (err) => console.error('[plt-media] 读取失败：', err.message));
+        return new Response(body, {
+          status: 200,
+          headers: {
+            'Content-Type': type,
+            'Content-Length': String(size),
+            'Accept-Ranges': 'bytes',
+            'Cache-Control': 'no-store'
+          }
+        });
       }
 
       const range = parseRange(rangeHeader, size);
@@ -200,7 +204,10 @@ function registerMediaProtocol() {
       }
       const { start, end } = range;
       const chunkSize = end - start + 1;
-      const stream = isHead ? null : fs.createReadStream(abs, { start, end });
+      if (!isHead) {
+        stream = fs.createReadStream(abs, { start, end });
+        stream.on('error', (err) => console.error('[plt-media] 分片读取失败：', err.message));
+      }
       return new Response(stream, {
         status: 206,
         headers: {
@@ -212,6 +219,9 @@ function registerMediaProtocol() {
         }
       });
     } catch (err) {
+      // 播放器频繁 seek 会取消旧请求，销毁流是正常现象，不要让它冒泡成未处理异常
+      try { if (stream) stream.destroy(); } catch (_) { /* ignore */ }
+      console.error('[plt-media] 请求失败：', err.message);
       return new Response('error: ' + err.message, { status: 500 });
     }
   });
@@ -819,6 +829,8 @@ function registerIpc() {
         skipped: res.skipped,
         below: res.below,
         blocked: res.blocked,
+        partial: !!res.partial,
+        aiError: res.aiError || null,
         scannedLines: slice.length,
         uniqueWords: list.length,
         level: levelId,
@@ -1292,6 +1304,15 @@ function runSmokeTest() {
       const out2 = out.replace(/\.png$/i, '-dict.png');
       fs.writeFileSync(out2, shot2.toPNG());
       log('截图 3 已保存：' + out2);
+
+      // 第四张：词典标题区 1:1 裁剪（诊断“单词显示块”排版）
+      const headClip = await js(`(() => {
+        const r = document.getElementById('dictPanel').getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: 70 };
+      })()`);
+      const shot4 = await mainWindow.webContents.capturePage(headClip);
+      fs.writeFileSync(out.replace(/\.png$/i, '-word.png'), shot4.toPNG());
+      log('截图 4（词典标题 ' + headClip.width + 'x' + headClip.height + '）：' + out.replace(/\.png$/i, '-word.png'));
 
       // ── 大模型分级取词端到端测试（已配置 API Key 时自动启用）──
       let llmInfo = null;
