@@ -296,6 +296,10 @@
     window.PLT.app.info().then((info) => {
       $('#sbPortable').textContent = info.portable ? `便携模式 · ${info.version}` : `v${info.version}`;
       $('#sbPortable').title = info.dataDir;
+      // 标题栏与窗口标题都带版本号，方便一眼确认当前跑的是哪版
+      const ver = $('#appVersion');
+      if (ver) ver.textContent = `v${info.version}`;
+      document.title = `Podcasts Learning Tool v${info.version} — 英语学习神器`;
     });
   }
 

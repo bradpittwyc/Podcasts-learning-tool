@@ -74,6 +74,13 @@ if (i > 0) {
         return r.hasLine === true && r.downloadVisibleAtAvailable === true
           && r.barVisible === true && r.barWidth === '42%'
           && r.buttons.includes('立即重启并安装') && /下载中/.test(r.badgeText || '');
+      })()],
+      ['7c 标题栏/窗口标题带版本号', (() => {
+        const r = obj['7c 标题带版本号'];
+        if (!r || !r.version) return false;
+        return r.docTitle.includes('v' + r.version)
+          && r.titlebarText.includes('v' + r.version)
+          && r.versionNode === 'v' + r.version;
       })()]
     ];
     console.log('\n=== 断言明细 ===');

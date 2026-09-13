@@ -489,8 +489,7 @@ function install(ctx) {
       return { hiddenAtIdle, shown, text: badge.textContent, cursor: getComputedStyle(badge).cursor };
     })()`);
 
-    out['7b 更新面板与下载进度'] = await run('7b', `(async () => {
-      window.PLTUpdate.modal();
+    out['7b 更新面板与下载进度'] = await run('7b', `(async () => {      window.PLTUpdate.modal();
       await new Promise((r) => setTimeout(r, 200));
       const modal = [...document.querySelectorAll('.modal')].pop();
       const line = modal ? modal.querySelector('.upd-line') : null;
@@ -517,6 +516,18 @@ function install(ctx) {
       window.PLTUpdate.refresh();
       await new Promise((r) => setTimeout(r, 150));
       return res;
+    })()`);
+
+    // 窗口标题与标题栏都要带版本号（一眼看出当前跑的是哪版）
+    out['7c 标题带版本号'] = await run('7c', `(async () => {
+      const info = await window.PLT.app.info();
+      const el = document.getElementById('appVersion');
+      return {
+        version: info.version,
+        docTitle: document.title,
+        titlebarText: document.querySelector('.app-title').textContent.replace(/\\s+/g, ' ').trim(),
+        versionNode: el ? el.textContent : null
+      };
     })()`);
 
     // 点一个「远低于 GRE 级别」的常用词，必须仍然能查（弹面板 + 真的发出请求）

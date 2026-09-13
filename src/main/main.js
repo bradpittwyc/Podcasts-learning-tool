@@ -246,7 +246,7 @@ function createMainWindow() {
     minWidth: 1020,
     minHeight: 640,
     show: false,
-    title: 'Podcasts Learning Tool',
+    title: `Podcasts Learning Tool v${app.getVersion()}`,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1b1f' : '#f6f7fb',
     autoHideMenuBar: true,
     frame: false,
