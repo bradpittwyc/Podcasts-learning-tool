@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob: plt-media: file:; media-src 'self' plt-media: file: blob: data:; img-src 'self' data: blob: plt-media: file:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob: plt-media: file:; media-src 'self' plt-media: file: blob: data: https:; img-src 'self' data: blob: plt-media: file:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;" />
 <title>Podcasts Learning Tool — 英语学习神器</title>
 <link rel="stylesheet" href="css/tokens.css" />
 <link rel="stylesheet" href="css/app.css" />
@@ -276,6 +276,10 @@
             <div class="dict-word-wrap">
               <span class="dict-word" id="dictWord">—</span>
               <span class="dict-phonetic" id="dictPhonetic"></span>
+              <span class="dict-pron" id="dictPron">
+                <button class="pron-btn" data-accent="us" title="播放美音">🔊 美</button>
+                <button class="pron-btn" data-accent="uk" title="播放英音">🔊 英</button>
+              </span>
             </div>
             <div class="dict-tags" id="dictTags"></div>
             <button class="icon-btn" id="dictClose" title="关闭">&times;</button>
@@ -284,7 +288,6 @@
             <div class="dict-empty" id="dictEmpty">点选正文中的英文单词即可查询释义</div>
           </div>
           <div class="dict-foot">
-            <button class="ph-btn" id="dictSpeak">🔊 朗读</button>
             <button class="ph-btn" id="dictSave">＋ 生词本</button>
             <button class="ph-btn" id="dictRetry">重新查询</button>
           </div>

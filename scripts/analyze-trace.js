@@ -81,6 +81,14 @@ if (i > 0) {
         return r.docTitle.includes('v' + r.version)
           && r.titlebarText.includes('v' + r.version)
           && r.versionNode === 'v' + r.version;
+      })()],
+      ['8a 单词旁发音（美/英各一次，真取音频）', (() => {
+        const r = obj['8a 单词旁发音按钮'];
+        if (!r || r.error) return false;
+        const us = r.us, uk = r.uk;
+        return r.count === 2 && r.sameRowAsPhonetic === true
+          && us && us.ok === true && /dictvoice/.test(us.url || '') && /type=2/.test(us.url || '')
+          && uk && uk.ok === true && /dictvoice/.test(uk.url || '') && /type=1/.test(uk.url || '');
       })()]
     ];
     console.log('\n=== 断言明细 ===');

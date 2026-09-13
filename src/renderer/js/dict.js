@@ -175,9 +175,12 @@
       this.currentCue = null;
       this.history = [];
       U.$('#dictClose').addEventListener('click', () => this.hide());
-      U.$('#dictSpeak').addEventListener('click', () => this.speak());
       U.$('#dictSave').addEventListener('click', () => this.save());
       U.$('#dictRetry').addEventListener('click', () => this.reload(true));
+      // 单词旁的发音按钮：美音 / 英音各一个
+      for (const btn of U.$$('#dictPron .pron-btn')) {
+        btn.addEventListener('click', (e) => { e.stopPropagation(); this.speak(btn.dataset.accent); });
+      }
       document.addEventListener('keydown', (e) => {
         if (e.key === 'Escape' && !this.panel.classList.contains('hidden')) { this.hide(); e.stopPropagation(); }
       });
@@ -196,6 +199,7 @@
       this.current = null;
       this.wordEl.textContent = word;
       this.phEl.textContent = '';
+      this.paintPron(null);
       clear(this.tagsEl);
       clear(this.body);
       this.body.appendChild(el('div', { class: 'dict-loading' }, [el('div', { class: 'spinner' }), el('span', { text: '思考中........' })]));
@@ -295,11 +299,32 @@
       return res;
     }
 
-    async speak() {
-      const w = this.current ? this.current.lemma : this.wordEl.textContent;
-      if (!w) return;
-      const mode = this.opts.pronounce ? this.opts.pronounce() : 'us';
-      this.opts.onSpeak && this.opts.onSpeak(w, mode);
+    /** 发音按钮状态：null=全部复位，'us'/'uk'=哪个在播 */
+    paintPron(playing, phase) {
+      for (const btn of U.$$('#dictPron .pron-btn')) {
+        btn.classList.toggle('playing', playing === btn.dataset.accent && phase === 'playing');
+        btn.classList.toggle('busy', playing === btn.dataset.accent && phase === 'busy');
+        btn.classList.toggle('err', playing === btn.dataset.accent && phase === 'err');
+      }
+    }
+
+    /** 点选发音：accent 传 'us'/'uk' 覆盖设置，不传则用设置里的口音 */
+    async speak(accent) {
+      const w = this.current ? (this.current.lemma || this.current.word) : this.wordEl.textContent;
+      if (!w || w === '—') { toast('还没有可朗读的单词', 'warn'); return; }
+      const mode = accent || (this.opts.pronounce ? this.opts.pronounce() : 'us');
+      this.paintPron(mode === 'uk' ? 'uk' : 'us', 'busy');
+      const res = await speakWord(w, mode);
+      if (!res || !res.ok) {
+        this.paintPron(mode === 'uk' ? 'uk' : 'us', 'err');
+        toast('发音播放失败：' + ((res && res.error) || '未知原因'), 'warn', 5000);
+        setTimeout(() => this.paintPron(null), 1200);
+      } else if (res.via === 'tts' && !speakWarned) {
+        // 只在本次会话提醒一次，避免离线时每次点都弹
+        speakWarned = true;
+        toast('在线真人发音取不到，已改用系统语音（可在设置 → 取词级别 里切换口音策略）', 'warn', 6000);
+      }
+      return res;
     }
 
     async save() {
@@ -317,16 +342,61 @@
   // 真人发音（有道公开接口，失败则回退系统 TTS）
   // ══════════════════════════════════════════════════════════
   let currentAudio = null;
+  let currentBtn = null;
+  let speakWarned = false;
+
+  /**
+   * 朗读一个单词。
+   * @returns {Promise<{ok:boolean, via:'online'|'tts'|'none', url?:string, error?:string}>}
+   */
+  function speakWord(word, mode) {
+    return new Promise((resolve) => {
+      const w = String(word || '').trim();
+      if (!w) return resolve({ ok: false, via: 'none', error: '没有单词' });
+      if (currentAudio) { try { currentAudio.pause(); } catch (_) { } currentAudio = null; }
+      if (currentBtn) { currentBtn.classList.remove('playing'); currentBtn = null; }
+
+      const wantTTS = mode === 'none';
+      const type = mode === 'uk' ? 1 : 2;
+      const url = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(w)}&type=${type}`;
+      const done = (r) => {
+        // 测试接缝：冒烟断言据此确认「点了按钮确实去取音频了」
+        try { window.__pltLastSpeak = Object.assign({ word: w, mode }, r); } catch (_) { }
+        resolve(r);
+      };
+
+      if (wantTTS) return done(ttsSpeak(w) ? { ok: true, via: 'tts' } : { ok: false, via: 'none', error: '系统语音不可用' });
+
+      const audio = new Audio(url);
+      currentAudio = audio;
+      audio.volume = 1;
+      audio.addEventListener('playing', () => {
+        const btn = U.$(`#dictPron .pron-btn[data-accent="${mode === 'uk' ? 'uk' : 'us'}"]`);
+        if (btn) { btn.classList.remove('busy', 'err'); currentBtn = btn; btn.classList.add('playing'); }
+      });
+      audio.addEventListener('ended', () => { if (currentBtn) currentBtn.classList.remove('playing'); currentBtn = null; });
+      audio.addEventListener('error', () => {
+        // 联网失败（离线 / 接口不通）→ 退回系统 TTS，别让按钮点了没反应
+        const ok = ttsSpeak(w);
+        done(ok
+          ? { ok: true, via: 'tts', url, error: '在线发音不可用，已用系统语音' }
+          : { ok: false, via: 'none', url, error: '在线发音与系统语音都不可用' });
+      });
+      audio.play().then(
+        () => done({ ok: true, via: 'online', url }),
+        (err) => {
+          const ok = ttsSpeak(w);
+          done(ok
+            ? { ok: true, via: 'tts', url, error: '播放被拒绝，已用系统语音：' + (err && err.message) }
+            : { ok: false, via: 'none', url, error: '播放失败：' + (err && err.message) });
+        }
+      );
+    });
+  }
+
+  /** 旧的同步入口（生词本 / 闪卡那边还在用），内部转调 speakWord */
   function speak(word, mode) {
-    if (!word) return;
-    if (mode === 'none') { ttsSpeak(word); return; }
-    if (currentAudio) { try { currentAudio.pause(); } catch (_) { } currentAudio = null; }
-    const type = mode === 'uk' ? 1 : 2;
-    const url = `https://dict.youdao.com/dictvoice?audio=${encodeURIComponent(word)}&type=${type}`;
-    const audio = new Audio(url);
-    currentAudio = audio;
-    audio.volume = 1;
-    audio.play().catch(() => { ttsSpeak(word); });
+    speakWord(word, mode || 'us');
   }
 
   function ttsSpeak(text) {
@@ -336,7 +406,8 @@
       u.rate = 0.95;
       speechSynthesis.cancel();
       speechSynthesis.speak(u);
-    } catch (_) { toast('朗读不可用', 'warn'); }
+      return true;
+    } catch (_) { return false; }
   }
 
   // ══════════════════════════════════════════════════════════
@@ -462,5 +533,5 @@
     return res;
   }
 
-  window.PLTDict = { Lookup, DictPanel, speak, ttsSpeak, screenCaptureLookup, ocrText };
+  window.PLTDict = { Lookup, DictPanel, speak, speakWord, ttsSpeak, screenCaptureLookup, ocrText };
 }());

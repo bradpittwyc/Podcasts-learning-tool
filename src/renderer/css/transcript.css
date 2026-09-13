@@ -294,6 +294,25 @@ body[data-theme="dark"] .tag.b1 { color: var(--lvl-b1); }
   min-width: 0;
 }
 .dict-phonetic { font-family: var(--font-en); font-size: 13px; color: var(--text-3); white-space: nowrap; }
+/* 单词旁的发音按钮：跟在音标后面，不抢单词的视觉重量 */
+.dict-pron { display: inline-flex; gap: 4px; align-self: center; }
+.pron-btn {
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  line-height: 1;
+  padding: 4px 7px;
+  border-radius: 999px;
+  border: 1px solid var(--stroke-1);
+  background: var(--bg-card-alt);
+  color: var(--text-2);
+  cursor: pointer;
+  transition: background var(--dur-fast), color var(--dur-fast), border-color var(--dur-fast), transform var(--dur-fast);
+}
+.pron-btn:hover { background: var(--bg-hover); color: var(--text-1); border-color: var(--stroke-2); }
+.pron-btn:active { transform: scale(.94); }
+.pron-btn.playing { background: var(--accent); border-color: var(--accent); color: var(--accent-text); }
+.pron-btn.busy { opacity: .65; }
+.pron-btn.err { border-color: var(--danger, #e05252); color: var(--danger, #e05252); }
 /* 第二行：整行都是标签，绝不与单词重叠 */
 .dict-tags {
   grid-column: 1 / -1;

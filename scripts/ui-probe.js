@@ -530,6 +530,32 @@ function install(ctx) {
       };
     })()`);
 
+    // 单词旁的发音按钮：必须真去取音频（美/英分开）
+    out['8a 单词旁发音按钮'] = await run('8a', `(async () => {
+      const wrap = document.querySelector('.dict-word-wrap');
+      const btns = [...document.querySelectorAll('#dictPron .pron-btn')];
+      const phon = document.getElementById('dictPhonetic');
+      const us = btns.find((b) => b.dataset.accent === 'us');
+      const uk = btns.find((b) => b.dataset.accent === 'uk');
+      if (!us || !uk) return { error: '发音按钮不存在', count: btns.length };
+      window.__pltLastSpeak = null;
+      us.click();
+      await new Promise((r) => setTimeout(r, 1500));
+      const usRes = window.__pltLastSpeak;
+      window.__pltLastSpeak = null;
+      uk.click();
+      await new Promise((r) => setTimeout(r, 1500));
+      const ukRes = window.__pltLastSpeak;
+      const sameRow = !!(wrap && phon && btns[0].getBoundingClientRect().top - phon.getBoundingClientRect().top < 40);
+      return {
+        count: btns.length,
+        sameRowAsPhonetic: sameRow,
+        us: usRes, uk: ukRes,
+        usUrl: usRes && usRes.url, ukUrl: ukRes && ukRes.url,
+        word: document.getElementById('dictWord').textContent
+      };
+    })()`);
+
     // 点一个「远低于 GRE 级别」的常用词，必须仍然能查（弹面板 + 真的发出请求）
     out['6b 低级别常用词仍可查'] = await run('6b', `(async () => {
       const before = window.__pltSmoke.costStats();
