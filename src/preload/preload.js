@@ -68,6 +68,7 @@ contextBridge.exposeInMainWorld('PLT', {
     readText: (p) => invoke('file:readText', p),
     describe: (p) => invoke('file:describe', p),
     scanFolder: (dir) => invoke('file:scanFolder', dir),
+    listSubtitles: (payload) => invoke('file:listSubtitles', payload),
     findSiblingSubtitle: (p) => invoke('file:findSiblingSubtitle', p),
     autoSaveSubtitle: (payload) => invoke('file:autoSaveSubtitle', payload)
   },

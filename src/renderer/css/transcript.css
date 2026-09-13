@@ -47,9 +47,14 @@
   padding: 6px 4px 76px 8px;
   scroll-behavior: smooth;
   user-select: text;
+  transition: padding-right var(--dur-mid) var(--ease-fluent);
   --en-size: calc(17.5px * var(--tr-scale, 1));
   --zh-size: calc(14px * var(--tr-scale, 1));
 }
+/* 词典面板打开时：正文让出空间，而不是被盖住 */
+.pane-body.dict-open .transcript { padding-right: calc(min(400px, 62%) + 8px); }
+.pane-body.dict-open .vocab-view,
+.pane-body.dict-open .history-view { padding-right: min(400px, 62%); }
 .transcript.auto-scroll-off { scroll-behavior: auto; }
 
 /* ── 单行 ── */

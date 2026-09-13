@@ -104,8 +104,13 @@
 
     // ── 播放控制 ──
     async play() {
+      const m = this.media;
+      // 播到结尾后再按播放：从头开始（否则会停在末尾不动，看起来像“播放无效”）
+      if (m.ended || (Number.isFinite(m.duration) && m.duration > 0 && m.currentTime >= m.duration - 0.06)) {
+        try { m.currentTime = 0; } catch (_) { /* ignore */ }
+      }
       try {
-        await this.media.play();
+        await m.play();
       } catch (err) {
         if (err && err.name === 'NotAllowedError') toast('浏览器阻止了自动播放，请手动点击播放', 'warn');
         else this.emit('error', { message: err.message });
@@ -113,7 +118,9 @@
     }
 
     pause() { this.media.pause(); }
-    toggle() { if (this.media.paused || this.media.ended) this.play(); else this.pause(); }
+    toggle() {
+      if (this.media.paused || this.media.ended) this.play(); else this.pause();
+    }
     get playing() { return !this.media.paused && !this.media.ended; }
     get currentTime() { return this.media.currentTime || 0; }
     get duration() { return Number.isFinite(this.media.duration) ? this.media.duration : 0; }
@@ -121,7 +128,21 @@
     seek(time, opts) {
       const d = this.duration;
       const t = clamp(Number(time) || 0, 0, d > 0 ? d - 0.01 : Number(time) || 0);
+      const before = this.media.currentTime;
       try { this.media.currentTime = t; } catch (_) { /* ignore */ }
+      // 极少数情况下（元数据未就绪 / seekable 区间缺失）赋值会被忽略，等元数据好了再补一次
+      if (Math.abs(t - before) > 0.15) {
+        const media = this.media;
+        const retry = () => {
+          try {
+            if (Math.abs(media.currentTime - t) > 0.4) {
+              media.currentTime = t;
+            }
+          } catch (_) { /* ignore */ }
+        };
+        if (media.readyState < 1) media.addEventListener('loadedmetadata', retry, { once: true });
+        else setTimeout(retry, 60);
+      }
       this.tick(true);
       if (opts && opts.play && this.media.paused) this.play();
     }
@@ -300,7 +321,8 @@
     const timeFromEvent = (e) => {
       const rect = seekbar.getBoundingClientRect();
       const ratio = clamp((e.clientX - rect.left) / rect.width, 0, 1);
-      return ratio * (player.duration || 0);
+      const t = ratio * (player.duration || 0);
+      return t;
     };
     const startDrag = (e) => {
       if (!player.duration) return;

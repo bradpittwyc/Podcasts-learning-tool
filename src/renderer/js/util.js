@@ -115,8 +115,17 @@
   }
 
   // ── 模态框 ──
+  let activeModalClose = null;
+
   function modal(opts) {
     const host = $('#modalHost');
+    // 只允许一个模态框：先关掉上一个，避免残留节点挡住下面的交互
+    if (activeModalClose) {
+      const prev = activeModalClose;
+      activeModalClose = null;
+      try { prev(null, { silent: true }); } catch (_) { /* ignore */ }
+    }
+
     const box = el('div', { class: `modal ${opts.narrow ? 'narrow' : ''}` });
     const head = el('div', { class: 'modal-head' }, [
       el('div', {}, [
@@ -132,16 +141,22 @@
     box.appendChild(head);
     box.appendChild(body);
 
+    let closed = false;
     const api = {
       box,
       body,
-      close(result) {
+      close(result, o) {
+        if (closed) return;
+        closed = true;
+        if (activeModalClose === api.close) activeModalClose = null;
         host.classList.add('hidden');
-        clear(host);
+        host.style.display = '';   // 清掉可能残留的内联样式
+        clear(host);               // 关键：隐藏后必须清空，否则残留 .modal 会挡住整屏点击
         document.removeEventListener('keydown', onKey, true);
-        if (opts.onClose) opts.onClose(result);
+        if (!(o && o.silent) && opts.onClose) opts.onClose(result);
       }
     };
+    activeModalClose = api.close;
 
     function onKey(e) {
       if (e.key === 'Escape') { e.stopPropagation(); api.close(null); }
@@ -171,6 +186,7 @@
     clear(host);
     host.appendChild(box);
     host.classList.remove('hidden');
+    host.style.display = '';
     if (opts.render) opts.render(box, api);
     return api;
   }

@@ -21,10 +21,17 @@ const screenText = require('./screen-text');
 
 const isDev = process.argv.includes('--dev') || !!process.env.PLT_DEV;
 const isSmoke = process.argv.includes('--smoke-test');
+const isSmokeUi = process.argv.includes('--smoke-ui');
 const smokeOut = (() => {
   const i = process.argv.indexOf('--smoke-out');
   return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : null;
 })();
+
+// ─────────────────────────────────────────────────────────────
+// 应用名（决定 userData 目录：%APPDATA%\Podcasts Learning Tool）
+// 必须在任何 app.getPath('userData') 之前设置，否则会退回 "Electron" 目录。
+// ─────────────────────────────────────────────────────────────
+app.setName('Podcasts Learning Tool');
 
 // ─────────────────────────────────────────────────────────────
 // 单实例
@@ -105,6 +112,10 @@ if (gotLock) app.setAppUserModelId('com.bradpittwyc.podcastlearning');
 
 // ─────────────────────────────────────────────────────────────
 // 自定义媒体协议：plt-media://local/<urlencoded-abs-path>
+//
+// 关键：必须自己实现 HTTP Range（206 Partial Content）与 Accept-Ranges 头，
+// 否则 Chromium 认为媒体不可 seek —— 表现为拖动进度条、点击字幕跳转都无效
+// （currentTime 赋值被静默忽略，播放位置永远回到 0）。
 // ─────────────────────────────────────────────────────────────
 protocol.registerSchemesAsPrivileged([
   {
@@ -113,21 +124,92 @@ protocol.registerSchemesAsPrivileged([
   }
 ]);
 
+const MIME_BY_EXT = {
+  '.mp4': 'video/mp4', '.m4v': 'video/mp4', '.mov': 'video/quicktime',
+  '.mkv': 'video/x-matroska', '.webm': 'video/webm',
+  '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.aac': 'audio/aac',
+  '.wav': 'audio/wav', '.ogg': 'audio/ogg', '.oga': 'audio/ogg',
+  '.opus': 'audio/ogg', '.flac': 'audio/flac', '.wma': 'audio/x-ms-wma'
+};
+
 function mediaUrlFor(absPath) {
   return 'plt-media://local/' + encodeURIComponent(absPath).replace(/%2F/gi, '/');
 }
 
+function pathFromMediaUrl(requestUrl) {
+  const url = new URL(requestUrl);
+  let rel = decodeURIComponent(url.pathname || '');
+  if (rel.startsWith('/')) rel = rel.slice(1);
+  return path.normalize(rel); // Windows 盘符：plt-media://local/E:/x/y.mp4
+}
+
+/** 解析 Range 头：bytes=START-END / bytes=START- / bytes=-SUFFIX */
+function parseRange(header, size) {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(String(header || '').trim());
+  if (!m) return null;
+  const hasStart = m[1] !== '';
+  const hasEnd = m[2] !== '';
+  if (!hasStart && !hasEnd) return null;
+  let start;
+  let end;
+  if (hasStart) {
+    start = Number(m[1]);
+    end = hasEnd ? Math.min(Number(m[2]), size - 1) : size - 1;
+  } else {
+    const suffix = Number(m[2]);
+    start = Math.max(0, size - suffix);
+    end = size - 1;
+  }
+  if (!Number.isFinite(start) || !Number.isFinite(end) || start > end || start >= size) return { invalid: true };
+  return { start, end };
+}
+
 function registerMediaProtocol() {
-  protocol.handle('plt-media', (request) => {
+  protocol.handle('plt-media', async (request) => {
     try {
-      const url = new URL(request.url);
-      let rel = decodeURIComponent(url.pathname || '');
-      if (rel.startsWith('/')) rel = rel.slice(1);
-      // Windows 盘符：plt-media://local/E:/x/y.mp4
-      const abs = path.normalize(rel);
+      const abs = pathFromMediaUrl(request.url);
       if (!path.isAbsolute(abs)) return new Response('bad path', { status: 400 });
-      if (!fs.existsSync(abs)) return new Response('not found', { status: 404 });
-      return net.fetch(pathToFileURL(abs).toString(), { bypassCustomProtocolHandlers: true });
+      let stat;
+      try { stat = await fsp.stat(abs); } catch (_) { return new Response('not found', { status: 404 }); }
+      if (!stat.isFile()) return new Response('not a file', { status: 404 });
+
+      const size = stat.size;
+      const type = MIME_BY_EXT[path.extname(abs).toLowerCase()] || 'application/octet-stream';
+      const rangeHeader = request.headers.get('Range') || request.headers.get('range');
+      const isHead = request.method === 'HEAD';
+
+      // 无 Range：返回完整文件，但声明支持 Range（这是 seek 的前提）
+      if (!rangeHeader) {
+        const body = isHead ? null : fs.createReadStream(abs);
+        const headers = {
+          'Content-Type': type,
+          'Content-Length': String(size),
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-store'
+        };
+        return new Response(body, { status: 200, headers });
+      }
+
+      const range = parseRange(rangeHeader, size);
+      if (!range || range.invalid) {
+        return new Response('range not satisfiable', {
+          status: 416,
+          headers: { 'Content-Range': `bytes */${size}`, 'Accept-Ranges': 'bytes' }
+        });
+      }
+      const { start, end } = range;
+      const chunkSize = end - start + 1;
+      const stream = isHead ? null : fs.createReadStream(abs, { start, end });
+      return new Response(stream, {
+        status: 206,
+        headers: {
+          'Content-Type': type,
+          'Content-Length': String(chunkSize),
+          'Content-Range': `bytes ${start}-${end}/${size}`,
+          'Accept-Ranges': 'bytes',
+          'Cache-Control': 'no-store'
+        }
+      });
     } catch (err) {
       return new Response('error: ' + err.message, { status: 500 });
     }
@@ -563,7 +645,62 @@ function registerIpc() {
 
   // 扫描文件夹并配对同名字幕（供「文件夹导入」列表与自动化测试复用）
   ipcMain.handle('file:scanFolder', (_e, dir) => {
-    try { return scanFolder(dir); } catch (err) { return [{ error: err.message }]; }
+    try { return scanFolder(dir); } catch (err) { const r = [{ error: err.message }]; r.subtitles = []; return r; }
+  });
+
+  /**
+   * 列出可用于当前媒体的字幕文件：
+   *   1) 同一目录下所有字幕（默认，便于手动挑一份）
+   *   2) 全盘扫描过的目录（dir 参数，来自「文件夹导入」）
+   *   3) 已在本应用加载过的字幕（renderer 侧合并）
+   */
+  ipcMain.handle('file:listSubtitles', async (_e, payload) => {
+    const { dir, mediaPath } = payload || {};
+    const list = [];
+    const seen = new Set();
+    const push = (full, extra) => {
+      const key = String(full).toLowerCase();
+      if (seen.has(key)) return;
+      seen.add(key);
+      let size = 0;
+      let mtime = 0;
+      try { const st = fs.statSync(full); size = st.size; mtime = st.mtimeMs; } catch (_) { /* ignore */ }
+      list.push({
+        path: full,
+        name: path.basename(full),
+        dir: path.dirname(full),
+        size,
+        mtime,
+        matched: !!(extra && extra.matched)
+      });
+    };
+
+    // 1) 媒体同目录
+    if (mediaPath) {
+      const mediaDir = path.dirname(mediaPath);
+      const base = path.basename(mediaPath, path.extname(mediaPath)).toLowerCase();
+      let entries = [];
+      try { entries = fs.readdirSync(mediaDir, { withFileTypes: true }); } catch (_) { entries = []; }
+      for (const e of entries) {
+        if (!e.isFile()) continue;
+        const ext = path.extname(e.name).toLowerCase();
+        if (!subs.SUBTITLE_EXT.includes(ext)) continue;
+        // 纯 .txt 没有时间轴，导入需要额外输入时长，不放进快速选择列表
+        if (ext === '.txt') continue;
+        const nb = path.basename(e.name, path.extname(e.name)).toLowerCase();
+        push(path.join(mediaDir, e.name), { matched: nb === base || nb.startsWith(base) });
+      }
+      list.sort((a, b) => (Number(b.matched) - Number(a.matched)) || a.name.localeCompare(b.name, 'zh-CN', { numeric: true }));
+    }
+
+    // 2) 指定目录（递归）
+    if (dir) {
+      try {
+        const rows = scanFolder(dir);
+        for (const s of (rows.subtitles || [])) push(s.path, {});
+      } catch (_) { /* ignore */ }
+    }
+    return list;
   });
 
   ipcMain.handle('file:autoSaveSubtitle', async (_e, payload) => {
@@ -586,10 +723,12 @@ function registerIpc() {
   ipcMain.handle('llm:lookupWord', async (_e, payload) => {
     try {
       const { word, context, options } = payload || {};
-      const entry = await llm.lookupWord(word, context, options || {});
-      return { ok: true, entry };
+      const res = await llm.lookupBatch([{ word, context }], { ...(options || {}), force: true, applyLevelFilter: false });
+      const key = String(word).toLowerCase();
+      // 透传用量统计（渲染进程要据此显示 token / 费用）
+      return { ok: true, entry: res.entries[key] || null, toApi: res.toApi, fromCache: res.fromCache, usage: res.usage, ms: res.ms };
     } catch (err) {
-      return { ok: false, code: err.code || 'ERROR', error: err.message };
+      return { ok: false, code: err.code || 'ERROR', error: err.message, partial: err.partial || null };
     }
   });
   ipcMain.handle('llm:scanLine', async (_e, payload) => {
@@ -769,7 +908,17 @@ function scanFolder(dir, opts = {}) {
   try { walk(dir, 0, ''); } catch (err) { return [{ error: err.message }]; }
 
   const out = [];
+  const allSubs = [];   // 目录内全部字幕文件（供「选择字幕」菜单使用）
   for (const [folder, bucket] of byDir) {
+    for (const name of bucket.subs) {
+      const full = path.join(folder, name);
+      allSubs.push({
+        path: full,
+        name,
+        relative: bucket.relative ? path.join(bucket.relative, name) : name,
+        dir: folder
+      });
+    }
     for (const name of bucket.media) {
       const full = path.join(folder, name);
       const base = path.basename(name, path.extname(name)).toLowerCase();
@@ -794,7 +943,9 @@ function scanFolder(dir, opts = {}) {
   }
   // 按目录名 + 文件名自然排序，保证列表顺序稳定
   out.sort((a, b) => String(a.relative || a.name).localeCompare(String(b.relative || b.name), 'zh-CN', { numeric: true }));
+  allSubs.sort((a, b) => String(a.relative).localeCompare(String(b.relative), 'zh-CN', { numeric: true }));
   out.scannedDirs = scannedDirs;
+  out.subtitles = allSubs;
   return out;
 }
 
@@ -959,6 +1110,25 @@ function runSmokeTest() {
         return { cueEls, wEls, overlay, rateChips, seekStyle, subStatus: document.getElementById('sbSubs').textContent };
       })()`)));
 
+      // ── 真实 UI 交互探测（--smoke-ui）：放在截图之前，保证探测到的界面状态就是截图状态 ──
+      let uiOk = true;
+      if (isSmokeUi) {
+        try {
+          const probeMod = require(path.join(__dirname, '..', '..', 'scripts', 'ui-probe.js'));
+          const p = probeMod.install({ js, log, wait: (ms) => new Promise((r) => setTimeout(r, ms)) });
+          const res = await p.probe();
+          log('UI 探测结果：' + JSON.stringify(res, null, 1));
+          uiOk = !!(res['1b 真实坐标点击播放按钮'] && res['1b 真实坐标点击播放按钮'].icon
+            && res['1b 真实坐标点击播放按钮'].paused === false
+            && res['2b 拖动到 50%'] && res['2b 拖动到 50%'].tUp > 20
+            && res['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'] && res['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'].after > 30
+            && res['4a 字幕按钮与菜单'] && res['4a 字幕按钮与菜单'].menuVisible);
+        } catch (err) {
+          log('UI 探测异常：' + (err && (err.stack || err.message)));
+          uiOk = false;
+        }
+      }
+
       const shot = await mainWindow.webContents.capturePage();
       const out = smokeOut || path.join(store.getDataDir(), 'smoke.png');
       fs.writeFileSync(out, shot.toPNG());
@@ -975,12 +1145,13 @@ function runSmokeTest() {
       log('截图 2（文字区裁剪 ' + clip.width + 'x' + clip.height + '）：' + out3);
 
       // 第三张：打开词典面板（同时验证无 API Key 时的错误提示路径）
+      // 注意：这一步可能触发「未配置 Key」提示，必须放在 UI 交互探测与截图之后
       const dictInfo = await js(`(async () => {
         const spans = document.querySelectorAll('#transcript .w');
         if (!spans.length) return { error: 'no word spans' };
         const target = [...spans].find((s) => s.dataset.lower === 'meticulous') || spans[6];
         target.click();
-        await new Promise((r) => setTimeout(r, 1600));
+        await new Promise((r) => setTimeout(r, 2600));
         return {
           clicked: target.dataset.lower,
           panelVisible: !document.getElementById('dictPanel').classList.contains('hidden'),
@@ -994,6 +1165,58 @@ function runSmokeTest() {
       const out2 = out.replace(/\.png$/i, '-dict.png');
       fs.writeFileSync(out2, shot2.toPNG());
       log('截图 3 已保存：' + out2);
+
+      // ── 大模型分级取词端到端测试（已配置 API Key 时自动启用）──
+      let llmInfo = null;
+      const keyDiag = store.debugKey();
+      log('【Key 诊断】' + JSON.stringify(keyDiag));
+      const settingsInfo = await js(`window.PLT.settings.get().then((s) => ({ hasApiKey: !!s.llm.hasApiKey, hint: s.llm.apiKeyHint, dataDir: s.meta.dataDir, model: s.llm.model }))`).catch((e) => ({ error: e.message }));
+      log('【设置】' + JSON.stringify(settingsInfo));
+      let hasKey = !!(settingsInfo && settingsInfo.hasApiKey);
+
+      // --smoke-set-key <key>：通过应用自身身份写入 API Key（DPAPI 绑定应用身份）
+      const keyToSet = argAfter('--smoke-set-key');
+      if (keyToSet) {
+        const setRes = await js(`window.__pltSmoke.setApiKey(${JSON.stringify(keyToSet)})`).catch((e) => ({ error: e.message }));
+        log('【写入 API Key】' + JSON.stringify(setRes));
+        const test = await js(`window.__pltSmoke.testLLM()`).catch((e) => ({ error: e.message }));
+        log('【连接测试】' + JSON.stringify(test));
+        const after = store.debugKey();
+        log('【Key 诊断·写入后】' + JSON.stringify(after));
+        hasKey = !!(setRes && setRes.hasApiKey);
+      }
+      if (hasKey) {
+        const t0 = Date.now();
+        llmInfo = await js(`(async () => {
+          const res = await window.PLT.llm.lookup([
+            { word: 'the', context: 'The expedition relied on meticulous planning.' },
+            { word: 'meticulous', context: 'The expedition relied on meticulous planning.' },
+            { word: 'squander', context: 'We should not squander this fragile heritage.' }
+          ], { level: 'toefl', applyLevelFilter: true });
+          return {
+            ok: res.ok,
+            ms: res.ms,
+            apiCalls: res.toApi,
+            cacheHits: res.fromCache,
+            usage: res.usage,
+            explained: Object.keys(res.entries || {}),
+            skipped: Object.entries(res.skipped || {}).map(([w, v]) => ({ word: w, cefr: v.cefr, reason: v.reason })),
+            sample: res.entries && res.entries.squander ? {
+              lemma: res.entries.squander.lemma,
+              cefr: res.entries.squander.cefr,
+              exam: res.entries.squander.examLevels,
+              pos: res.entries.squander.pos,
+              zh: res.entries.squander.translation,
+              en: res.entries.squander.enDef,
+              example: res.entries.squander.example
+            } : null
+          };
+        })()`).catch((e) => ({ error: e.message }));
+        log('【大模型取词】' + JSON.stringify(llmInfo));
+        log('【大模型取词】耗时 ' + (Date.now() - t0) + 'ms');
+      } else {
+        log('【大模型取词】跳过（未配置 API Key）');
+      }
 
       const ok = media.duration > 0 && media.error === null;
 
@@ -1023,10 +1246,11 @@ function runSmokeTest() {
         log('文件夹导入回归：跳过（未传 --smoke-folder）');
       }
 
-      log('结果：' + (ok && folderOk ? 'PASS' : 'FAIL') + `（媒体=${ok ? 'ok' : 'fail'}，文件夹导入=${folderOk ? 'ok' : 'fail'}）`);
+      log('结果：' + (ok && folderOk && uiOk ? 'PASS' : 'FAIL')
+        + `（媒体=${ok ? 'ok' : 'fail'}，文件夹导入=${folderOk ? 'ok' : 'fail'}，UI 交互=${uiOk ? 'ok' : 'fail'}）`);
       clearTimeout(timer);
       writeTrace();
-      setTimeout(() => app.exit(ok && folderOk ? 0 : 2), 400);
+      setTimeout(() => app.exit(ok && folderOk && uiOk ? 0 : 2), 400);
     } catch (err) {
       log('异常：' + (err && (err.stack || err.message)));
       clearTimeout(timer);

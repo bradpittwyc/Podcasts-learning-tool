@@ -31,6 +31,9 @@
     subtitle: null,       // {path,name,format,encoding,count}
     mediaList: [],
     mediaIndex: -1,
+    folderDir: null,      // 「文件夹导入」选中的目录（供字幕菜单列出全部字幕）
+    folderSubtitles: [],
+    loadedSubtitles: [],  // 本次会话已加载过的字幕
     loopOne: false,
     abFirst: null,
     sessionStart: Date.now()
@@ -117,6 +120,7 @@
     applySettings(state.settings);
     applyTheme(await window.PLT.theme.resolve());
     paintPortable();
+    updateSubtitleButton();
 
     bindUi();
     bindPlayerEvents();
@@ -156,6 +160,17 @@
       get subtitle() { return state.subtitle; },
       get words() { return transcript.words.size; },
       get highlightCount() { return document.querySelectorAll('#transcript .w.hit').length; },
+      /** 供诊断/自动化：通过应用自身通道保存 API Key（DPAPI 与应用身份绑定，外部写入无法解密） */
+      setApiKey: async (key) => {
+        const res = await window.PLT.settings.setApiKey(key);
+        state.settings = await window.PLT.settings.get();
+        return { ...res, hasApiKey: !!state.settings.llm.hasApiKey, hint: state.settings.llm.apiKeyHint };
+      },
+      testLLM: () => window.PLT.settings.testLLM(),
+      /** 直接调用取词引擎（端到端验证分级过滤与费用） */
+      lookupWords: (items, options) => window.PLT.llm.lookup(items, options),
+      /** 只读诊断：查看本次会话的取词统计 */
+      costStats: () => ({ ...lookup.session, label: lookup.costLabel().text }),
       /** 模拟「文件夹导入」：走真实流程（扫描 → 弹列表 → 点击第 idx 行） */
       simulateFolderOpen: async (dir, idx = 0) => {
         window.__pltSmokeLog = [];
@@ -202,6 +217,7 @@
   }
 
   function extOf(p) { const m = String(p).toLowerCase().match(/\.[a-z0-9]+$/); return m ? m[0] : ''; }
+  function dirNameOf(p) { const i = Math.max(String(p).lastIndexOf('\\'), String(p).lastIndexOf('/')); return i > 0 ? String(p).slice(0, i) : ''; }
 
   // ══════════════════════════════════════════════════════════
   // 设置应用
@@ -300,19 +316,18 @@
     }
 
     $('#btnOpenMedia').addEventListener('click', () => openMediaDialog());
-    $('#btnOpenSub').addEventListener('click', () => openSubtitleDialog());
+    $('#btnOpenSub').addEventListener('click', () => subtitleMenu());
     $('#btnOpenFolder').addEventListener('click', () => openFolderDialog());
     $('#dzOpen').addEventListener('click', () => openMediaDialog());
     $('#dzSub').addEventListener('click', () => openSubtitleDialog());
     $('#dzFolder').addEventListener('click', () => openFolderDialog());
 
-    $('#btnPlay').addEventListener('click', () => player.toggle());
+    // 播放 / 上一句 / 下一句 / 重播 / 单句循环 / 倍速 的监听统一在 player.js 的
+    // bindTransport() 里绑定 —— 这里不要再绑，否则一次点击会触发两次（播放按钮会自己抵消）
     $('#btnPrevLine').addEventListener('click', () => goPrevLine());
     $('#btnNextLine').addEventListener('click', () => goNextLine());
     $('#btnReplay').addEventListener('click', () => replayCue(transcript.currentIndex));
     $('#btnLoopLine').addEventListener('click', () => loopCue(transcript.currentIndex));
-    $('#btnSlow').addEventListener('click', () => player.stepRate(-1));
-    $('#btnFast').addEventListener('click', () => player.stepRate(1));
     $('#btnSubtitleToggle').addEventListener('click', () => toggleSubtitleOverlay());
     $('#miniSub').addEventListener('click', () => toggleSubtitleOverlay());
     $('#btnShadow').addEventListener('click', () => shadow.toggle());
@@ -708,6 +723,8 @@
     $('#miniSub').classList.toggle('on', !on);
     window.PLT.settings.patch({ player: { subtitleOverlay: !on } });
     state.settings = { ...state.settings, player: { ...state.settings.player, subtitleOverlay: !on } };
+    updateSubtitleButton();
+    toast(on ? '已关闭字幕显示（正文区仍可点击跳转）' : '已恢复字幕显示', 'ok', 2600);
   }
 
   // ══════════════════════════════════════════════════════════
@@ -718,6 +735,7 @@
     if (!list || !list.length) return;
     state.mediaList = list;
     state.mediaIndex = 0;
+    state.folderDir = null;                    // 单文件打开：字幕菜单只列同目录
     await loadMedia(list[0]);
   }
 
@@ -731,6 +749,7 @@
     if (!list.length) { window.__pltErrors.push('openMediaPaths: no valid media in ' + JSON.stringify(paths)); return; }
     state.mediaList = list;
     state.mediaIndex = 0;
+    if (!state.folderDir) state.folderDir = dirNameOf(list[0].path);
     await loadMedia(list[0]);
   }
 
@@ -761,12 +780,14 @@
       if (previousSubtitle) {
         clearSubtitle('该文件没有同名字幕，已清空上一部字幕');
       } else {
-        toast('未找到同名字幕文件，可点「字幕」按钮导入，或直接拖入字幕文件', 'warn', 5200);
+        toast('未找到同名字幕，点「字幕」按钮可从文件夹中选择或导入', 'warn', 5200);
+        updateSubtitleButton();
       }
     }
+    updateSubtitleButton();
   }
 
-  /** 清空当前字幕（切换媒体且找不到同名字幕时调用） */
+  /** 清空当前字幕（切换媒体且找不到同名字幕时调用 / 用户主动清除） */
   function clearSubtitle(reason) {
     state.subtitle = null;
     transcript.setCues([], {});
@@ -778,7 +799,8 @@
     $('#overlayEn').textContent = '';
     $('#overlayZh').textContent = '';
     lastCueIndex = -2;
-    if (reason) toast(reason + '。可点「字幕」按钮导入，或把字幕文件拖进窗口。', 'warn', 5600);
+    updateSubtitleButton();
+    if (reason) toast(reason + '。可点「字幕」按钮选择字幕或导入字幕文件。', 'warn', 5600);
   }
 
   async function openSubtitleDialog() {
@@ -819,6 +841,10 @@
       }
     }
     state.subtitle = { path: res.path, name: res.name, format: res.format, encoding: res.encoding, count: res.cues.length };
+    // 记录到「本次已加载的字幕」列表，便于用「字幕」按钮快速切回
+    state.loadedSubtitles = (state.loadedSubtitles || []).filter((s) => s.path !== res.path);
+    state.loadedSubtitles.unshift({ path: res.path, name: res.name, format: res.format, count: res.cues.length });
+    state.loadedSubtitles = state.loadedSubtitles.slice(0, 12);
     transcript.setCues(res.cues, { path: res.path });
     transcript.setEditing(false);
     $('#btnEdit').classList.remove('on');
@@ -828,6 +854,7 @@
     lastCueIndex = -2;
     paintOverlay(null);
     transcript.setCurrent(-1);
+    updateSubtitleButton();
     if (state.settings.lookup.autoScan && res.cues.length) {
       // 等 UI 稳定后再扫描，避免卡顿
       setTimeout(() => autoScan({ silent: true }), 500);
@@ -841,15 +868,149 @@
     return res && res.ok ? res.text : '';
   }
 
+  // ══════════════════════════════════════════════════════════
+  // 字幕选择（「字幕」按钮：选择 / 关闭 / 打开文件）
+  // ══════════════════════════════════════════════════════════
+  /** 字幕按钮标签：跟着当前加载的字幕走 */
+  function updateSubtitleButton() {
+    const btnLabel = $('#subLabel');
+    const isOff = $('#subtitleOverlay').classList.contains('hidden-sub');
+    if (btnLabel) {
+      const name = state.subtitle ? (state.subtitle.name || '').replace(/\.[^.]+$/, '') : '';
+      btnLabel.textContent = name ? name.slice(0, 14) : '字幕';
+    }
+    const btn = $('#btnOpenSub');
+    if (btn) {
+      btn.title = state.subtitle
+        ? `当前字幕：${state.subtitle.name}（${state.subtitle.count} 行）${isOff ? ' · 已关闭显示' : ''}\n点击选择其他字幕 / 关闭字幕 / 打开字幕文件`
+        : '未加载字幕 —— 点击选择文件夹里的字幕或打开字幕文件';
+      btn.classList.toggle('on', !!state.subtitle);
+    }
+  }
+
+  /** 收集可选字幕：① 媒体同目录 + 文件夹导入时扫描到的 ② 本次已加载过的 */
+  async function collectSubtitles() {
+    let files = [];
+    try {
+      files = await window.PLT.file.listSubtitles({ dir: state.folderDir || null, mediaPath: state.media ? state.media.path : null });
+    } catch (_) { files = []; }
+    const out = [];
+    const seen = new Set();
+    for (const f of files || []) {
+      const key = String(f.path).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ path: f.path, name: f.name, matched: !!f.matched, source: state.folderDir ? '同目录/文件夹' : '同目录' });
+    }
+    for (const s of (state.loadedSubtitles || [])) {
+      const key = String(s.path).toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      out.push({ path: s.path, name: s.name, matched: false, source: '本次已加载' });
+    }
+    return out;
+  }
+
+  async function subtitleMenu() {
+    const btn = $('#btnOpenSub');
+    const rect = btn.getBoundingClientRect();
+    const items = [];
+    const isOff = $('#subtitleOverlay').classList.contains('hidden-sub');
+
+    items.push({
+      label: isOff ? '✓ 恢复字幕显示' : '关闭字幕显示',
+      kbd: 'Ctrl+H',
+      action: () => { if (!isOff) toggleSubtitleOverlay(); }
+    });
+    items.push({ sep: true });
+
+    let files = [];
+    try { files = await collectSubtitles(); } catch (_) { files = []; }
+
+    if (files.length) {
+      items.push({ label: `可选字幕（${files.length}）`, action: () => { } });
+      for (const f of files.slice(0, 14)) {
+        const active = state.subtitle && state.subtitle.path === f.path;
+        items.push({
+          label: `${active ? '● ' : '　'}${f.name}${f.matched ? '（同名）' : ''}`,
+          title: f.path,
+          action: () => {
+            if (active) { toast('这份字幕已经在使用中'); return; }
+            applySubtitleByPath(f.path);
+          }
+        });
+      }
+      const others = files.filter((f) => !(state.subtitle && state.subtitle.path === f.path));
+      if (others.length > 1) {
+        items.push({
+          label: '从列表中选择…',
+          action: () => subtitlePickerModal(files)
+        });
+      }
+    } else {
+      items.push({ label: '（当前文件夹里没有找到字幕文件）', action: () => { } });
+    }
+
+    items.push({ sep: true });
+    items.push({ label: '打开字幕文件…', kbd: 'Ctrl+Shift+O', action: () => openSubtitleDialog() });
+    if (state.subtitle) items.push({ label: '清除当前字幕', action: () => clearSubtitle('已清除字幕') });
+
+    U.contextMenu(rect.left, rect.bottom + 2, items);
+  }
+
+  async function applySubtitleByPath(path) {
+    const res = await window.PLT.file.loadSubtitle(path);
+    await applySubtitleResult(res);
+  }
+
+  /** 字幕较多时的完整列表弹窗 */
+  function subtitlePickerModal(files) {
+    let closeFn = null;
+    U.modal({
+      title: `选择字幕（${files.length}）`,
+      subtitle: state.media ? `当前媒体：${state.media.name}` : '未加载媒体',
+      body: el('div', { class: 'form', style: { maxHeight: '52vh', overflow: 'auto', paddingTop: '10px' } },
+        files.map((f) => {
+          const active = state.subtitle && state.subtitle.path === f.path;
+          return el('button', {
+            class: 'ctx-item',
+            style: { borderBottom: '1px solid var(--divider)', gap: '8px' },
+            title: f.path,
+            onclick: () => {
+              if (closeFn) closeFn(f.path);
+              else applySubtitleByPath(f.path);
+            }
+          }, [
+            el('span', { style: { flex: '1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, text: (active ? '● ' : '') + f.name }),
+            f.matched ? el('span', { class: 'tag', text: '同名' }) : null,
+            el('span', { class: 'muted small', text: f.source || '' })
+          ]);
+        })),
+      buttons: [
+        { label: '关闭字幕显示', action: () => { if (!$('#subtitleOverlay').classList.contains('hidden-sub')) toggleSubtitleOverlay(); } },
+        { label: '打开其他文件…', action: () => openSubtitleDialog() },
+        { label: '取消' }
+      ],
+      render: (_box, api) => { closeFn = api.close; },
+      onClose: (result) => {
+        if (typeof result === 'string' && result) applySubtitleByPath(result);
+      }
+    });
+  }
+
   /**
    * 文件夹导入：扫描 → 弹出可点击列表 → 点击某项即载入该媒体（同名字幕自动配对）
    * @param {string} [dirOverride] 指定目录（自动化测试用，跳过系统对话框）
    * @param {number} [clickIndex]  自动点击第 N 行（自动化测试用，走真实 onclick 路径）
    */
   async function openFolderDialog(dirOverride, clickIndex) {
-    const list = dirOverride ? await window.PLT.file.scanFolder(dirOverride) : await window.PLT.dialog.openFolder();
-    if (!list || !list.length) return;
-    if (list[0] && list[0].error) { toast('扫描失败：' + list[0].error, 'err'); return; }
+    const raw = dirOverride ? await window.PLT.file.scanFolder(dirOverride) : await window.PLT.dialog.openFolder();
+    if (!raw || !raw.length) return;
+    if (raw[0] && raw[0].error) { toast('扫描失败：' + raw[0].error, 'err'); return; }
+    // 文件夹导入：记住目录，字幕菜单会列出该目录（含子目录）的全部字幕
+    state.folderDir = dirOverride || dirNameOf(raw[0].path);
+    state.folderSubtitles = raw.subtitles || [];
+    const list = raw;
 
     const media = list.filter((x) => x && x.path && !x.error);
     const onlySubs = list.filter((x) => x && x.error);
@@ -998,9 +1159,20 @@
     if (force) { /* 由缓存穿透，主进程会重新请求 */ }
     const res = await lookup.lookupWord(word, cue, {});
     if (res && res.error === 'NO_API_KEY') {
-      setTimeout(() => settingsPanel.open('llm'), 400);
+      // 只提示，不自动弹设置窗口 —— 弹窗会盖住整个界面并吞掉所有点击
+      statusHint('未配置大模型 API Key：点这里或右上角 ⚙ 打开设置', 'err');
     }
     return res;
+  }
+
+  /** 状态灯提示（可点击打开设置），不打断当前操作 */
+  function statusHint(text, kind) {
+    const dot = $('#apiStatus');
+    dot.className = 'status-dot' + (kind ? ' ' + kind : '');
+    dot.title = text;
+    dot.style.cursor = 'pointer';
+    dot.onclick = () => settingsPanel.open('llm');
+    if (text) toast(text, kind === 'err' ? 'warn' : 'ok', 6000);
   }
 
   async function quickAddVocab(word, cue) {
@@ -1120,7 +1292,7 @@
     const force = !state.settings.lookup.filterMode || state.settings.lookup.filterMode === 'ai-judge';
     const res = await lookup.lookupText(text, { force });
     paintCost();
-    if (res && res.code === 'NO_API_KEY') { toast('请先在设置里配置大模型 API Key', 'warn'); settingsPanel.open('llm'); return; }
+    if (res && res.code === 'NO_API_KEY') { toast('请先在设置里配置大模型 API Key', 'warn'); statusHint('未配置大模型 API Key：点这里打开设置', 'err'); return; }
     if (!res || !res.ok) { toast(`查询失败：${(res && res.error) || '未知错误'}`, 'err', 6000); return; }
     const entries = Object.values(res.entries || {});
     const skipped = Object.entries(res.skipped || {});

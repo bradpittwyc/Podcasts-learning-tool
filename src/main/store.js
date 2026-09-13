@@ -266,6 +266,34 @@ function hasApiKey() {
   return !!getApiKey();
 }
 
+/** 诊断用：定位 Key 读取链路的问题（不输出明文） */
+function debugKey() {
+  const s = settings();
+  const enc = s.get('llm.apiKeyEnc', '');
+  const plain = s.get('llm.apiKeyPlain', '');
+  const out = {
+    settingsPath: s.path,
+    fileExists: false,
+    encryptionAvailable: safeStorage.isEncryptionAvailable(),
+    apiKeyEncLen: enc ? enc.length : 0,
+    apiKeyPlain: !!plain,
+    decryptOk: false,
+    decryptError: null,
+    keyLen: 0
+  };
+  try { out.fileExists = fs.existsSync(s.path); } catch (_) { /* ignore */ }
+  if (enc) {
+    try {
+      const dec = safeStorage.decryptString(Buffer.from(enc, 'base64'));
+      out.decryptOk = true;
+      out.keyLen = dec.length;
+    } catch (err) {
+      out.decryptError = err.message;
+    }
+  }
+  return out;
+}
+
 /** 给渲染进程用的脱敏设置（不含明文 key） */
 function publicSettings() {
   const s = settings();
@@ -293,6 +321,7 @@ module.exports = {
   setApiKey,
   getApiKey,
   hasApiKey,
+  debugKey,
   publicSettings,
   isPortable,
   getDataDir,

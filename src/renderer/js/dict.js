@@ -98,8 +98,7 @@
           map.set(k, { ...(v.entry || {}), status: v.reason === 'no-data' ? 'queried' : 'below', reason: v.reason });
         }
         this.status('', false);
-        return { map, stats: res };
-      } catch (err) {
+        return { map, stats: res };      } catch (err) {
         toast('扫描出错：' + err.message, 'err');
         return null;
       } finally {
@@ -162,9 +161,10 @@
       });
     }
 
-    show() { this.panel.classList.remove('hidden'); }
+    show() { this.panel.classList.remove('hidden'); document.getElementById('paneBody').classList.add('dict-open'); }
     hide() {
       this.panel.classList.add('hidden');
+      document.getElementById('paneBody').classList.remove('dict-open');
       document.querySelectorAll('.w.active').forEach((n) => n.classList.remove('active'));
       this.opts.onHide && this.opts.onHide();
     }
