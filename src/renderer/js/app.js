@@ -735,24 +735,50 @@
   }
 
   async function loadMedia(info) {
+    const previousMedia = state.media;
+    const previousSubtitle = state.subtitle;
     state.media = info;
     player.load(info);
     await window.PLT.history.add({ path: info.path, name: info.name, kind: info.kind, position: 0, subtitlePath: state.subtitle ? state.subtitle.path : null });
     await loadHistory();
+
     // 自动找同名字幕
-    if (info.siblingSubtitle) {
-      await openSubtitlePaths([info.siblingSubtitle], { silent: true });
-      toast(`已自动加载同名字幕：${info.siblingSubtitle.split(/[\\/]/).pop()}`, 'ok', 4200);
-    } else {
-      const found = await window.PLT.file.findSiblingSubtitle(info.path);
-      if (found && found.path) {
-        await openSubtitlePaths([found.path], { silent: true });
-        toast(`已自动加载同名字幕：${found.path.split(/[\\/]/).pop()}`, 'ok', 4200);
+    const sibling = info.siblingSubtitle || (await window.PLT.file.findSiblingSubtitle(info.path) || {}).path || null;
+    if (sibling) {
+      await openSubtitlePaths([sibling], { silent: true });
+      if (!state.subtitle || state.subtitle.path !== sibling) {
+        // 字幕加载失败（例如文件损坏），清掉以免误配
+        clearSubtitle('同名字幕加载失败');
       } else {
-        // 保留当前字幕（可能是用户手选的），但提示可导入
-        if (!state.subtitle) toast('未找到同名字幕文件，可点「字幕」按钮导入，或直接拖入字幕文件', 'warn', 5200);
+        toast(`已自动加载同名字幕：${String(sibling).split(/[\\/]/).pop()}`, 'ok', 4200);
+      }
+      return;
+    }
+
+    // 没有找到同名字幕：只有「换了一个媒体文件」时才清空上一部片的字幕，
+    // 同一文件的手选字幕（例如用户自己导入的）保持不动，避免误清。
+    if (!previousMedia || previousMedia.path !== info.path) {
+      if (previousSubtitle) {
+        clearSubtitle('该文件没有同名字幕，已清空上一部字幕');
+      } else {
+        toast('未找到同名字幕文件，可点「字幕」按钮导入，或直接拖入字幕文件', 'warn', 5200);
       }
     }
+  }
+
+  /** 清空当前字幕（切换媒体且找不到同名字幕时调用） */
+  function clearSubtitle(reason) {
+    state.subtitle = null;
+    transcript.setCues([], {});
+    transcript.setEditing(false);
+    $('#btnEdit').classList.remove('on');
+    $('#sbSubs').textContent = '无字幕';
+    $('#sbSubs').title = '';
+    $('#sbLine').textContent = '';
+    $('#overlayEn').textContent = '';
+    $('#overlayZh').textContent = '';
+    lastCueIndex = -2;
+    if (reason) toast(reason + '。可点「字幕」按钮导入，或把字幕文件拖进窗口。', 'warn', 5600);
   }
 
   async function openSubtitleDialog() {
@@ -845,6 +871,8 @@
     }
     if (onlySubs.length) toast(`${onlySubs.length} 个条目无法读取，已跳过`, 'warn');
 
+    // 判断是否为递归扫描结果（有子目录时用相对路径显示，便于区分）
+    const hasSubdir = media.some((x) => x.relative && /[\\/]/.test(x.relative));
     state.mediaList = media;
     state.mediaIndex = 0;
 
@@ -853,11 +881,11 @@
     let closeFn = null;
     U.modal({
       title: `文件夹内找到 ${media.length} 个媒体文件`,
-      subtitle: '点击条目打开；同名字幕会自动加载',
+      subtitle: hasSubdir ? '已包含子文件夹；点击条目打开，同名字幕会自动加载' : '点击条目打开；同名字幕会自动加载',
       body: el('div', { class: 'form', style: { maxHeight: '52vh', overflow: 'auto', paddingTop: '10px' } },
         media.map((item, i) => el('button', {
           class: 'ctx-item',
-          style: { borderBottom: '1px solid var(--divider)', gap: '10px' },
+          style: { borderBottom: '1px solid var(--divider)', gap: '8px' },
           title: item.path,
           onclick: () => {
             pick = i;
@@ -865,7 +893,10 @@
             else { $('#modalHost').classList.add('hidden'); loadMedia(media[i]); }
           }
         }, [
-          el('span', { style: { flex: '1', overflow: 'hidden', textOverflow: 'ellipsis' }, text: `${i + 1}. ${item.name}` }),
+          el('span', {
+            style: { flex: '1', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' },
+            text: `${i + 1}. ${hasSubdir ? (item.relative || item.name) : item.name}`
+          }),
           item.kind === 'audio' ? el('span', { class: 'tag', text: '音频' }) : null,
           item.size ? el('span', { class: 'muted small', text: U.fmtBytes(item.size) }) : null,
           el('span', { class: 'kbd', text: item.subtitlePath ? '✓ 有字幕' : '无字幕' })

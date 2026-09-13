@@ -734,36 +734,67 @@ function registerIpc() {
 }
 
 // ─────────────────────────────────────────────────────────────
-// 文件夹扫描：媒体 ↔ 字幕 自动配对
+// 文件夹扫描：媒体 ↔ 字幕 自动配对（支持递归子目录，默认最多 3 层）
 // ─────────────────────────────────────────────────────────────
-function scanFolder(dir) {
-  const out = [];
-  let entries = [];
-  try { entries = fs.readdirSync(dir, { withFileTypes: true }); } catch (err) { return [{ error: err.message }]; }
-  const mediaFiles = [];
-  const subFiles = [];
-  for (const e of entries) {
-    if (!e.isFile()) continue;
-    const ext = path.extname(e.name).toLowerCase();
-    if (subs.MEDIA_EXT.includes(ext)) mediaFiles.push(e.name);
-    else if (subs.SUBTITLE_EXT.includes(ext)) subFiles.push(e.name);
-  }
-  for (const name of mediaFiles) {
-    const full = path.join(dir, name);
-    const base = path.basename(name, path.extname(name)).toLowerCase();
-    let matched = null;
-    let bestScore = -1;
-    for (const s of subFiles) {
-      const sb = path.basename(s, path.extname(s)).toLowerCase();
-      let score = -1;
-      if (sb === base) score = 100;
-      else if (sb.startsWith(base) || base.startsWith(sb)) score = 60 - Math.abs(sb.length - base.length);
-      if (score > bestScore) { bestScore = score; matched = s; }
+function scanFolder(dir, opts = {}) {
+  const maxDepth = Number.isFinite(opts.maxDepth) ? opts.maxDepth : 3;
+  const byDir = new Map(); // 目录 -> { media: [name], subs: [name] }
+  let scannedDirs = 0;
+
+  const walk = (current, depth, relative) => {
+    let entries = [];
+    try { entries = fs.readdirSync(current, { withFileTypes: true }); } catch (err) {
+      if (depth === 0) throw err; // 顶层目录打不开才算致命
+      return;
     }
-    let info = null;
-    try { info = describeMedia(full); } catch (_) { info = { path: full, name }; }
-    out.push({ ...info, subtitlePath: bestScore >= 0 ? path.join(dir, matched) : null });
+    scannedDirs++;
+    const bucket = { media: [], subs: [] };
+    const subdirs = [];
+    for (const e of entries) {
+      if (e.isDirectory()) {
+        if (depth < maxDepth && !e.name.startsWith('.')) subdirs.push(e.name);
+        continue;
+      }
+      if (!e.isFile()) continue;
+      const ext = path.extname(e.name).toLowerCase();
+      if (subs.MEDIA_EXT.includes(ext)) bucket.media.push(e.name);
+      else if (subs.SUBTITLE_EXT.includes(ext)) bucket.subs.push(e.name);
+    }
+    if (bucket.media.length || bucket.subs.length) byDir.set(current, { ...bucket, relative });
+    for (const name of subdirs) {
+      walk(path.join(current, name), depth + 1, relative ? path.join(relative, name) : name);
+    }
+  };
+
+  try { walk(dir, 0, ''); } catch (err) { return [{ error: err.message }]; }
+
+  const out = [];
+  for (const [folder, bucket] of byDir) {
+    for (const name of bucket.media) {
+      const full = path.join(folder, name);
+      const base = path.basename(name, path.extname(name)).toLowerCase();
+      // 只在同目录内配对字幕，避免跨目录错配
+      let matched = null;
+      let bestScore = -1;
+      for (const s of bucket.subs) {
+        const sb = path.basename(s, path.extname(s)).toLowerCase();
+        let score = -1;
+        if (sb === base) score = 100;
+        else if (sb.startsWith(base) || base.startsWith(sb)) score = 60 - Math.abs(sb.length - base.length);
+        if (score > bestScore) { bestScore = score; matched = s; }
+      }
+      let info = null;
+      try { info = describeMedia(full); } catch (_) { info = { path: full, name }; }
+      out.push({
+        ...info,
+        relative: bucket.relative ? path.join(bucket.relative, name) : name,
+        subtitlePath: bestScore >= 0 ? path.join(folder, matched) : null
+      });
+    }
   }
+  // 按目录名 + 文件名自然排序，保证列表顺序稳定
+  out.sort((a, b) => String(a.relative || a.name).localeCompare(String(b.relative || b.name), 'zh-CN', { numeric: true }));
+  out.scannedDirs = scannedDirs;
   return out;
 }
 
@@ -827,12 +858,23 @@ function runSmokeTest() {
     writeTrace(); // 每行都立即落盘：即使进程异常退出也能看到进度
     console.log('[smoke]', ...a);
   };
-  const smokeFile = () => collectArgvFiles(process.argv)[0] || '';
   const argAfter = (flag) => {
     const i = process.argv.indexOf(flag);
     return i >= 0 && process.argv[i + 1] ? process.argv[i + 1] : null;
   };
+  // 未直接给媒体文件时，退化为「文件夹里第一个可播放文件」
+  const smokeFile = () => {
+    const direct = collectArgvFiles(process.argv)[0];
+    if (direct) return direct;
+    const folder = argAfter('--smoke-folder');
+    if (!folder) return '';
+    try {
+      const rows = scanFolder(folder).filter((x) => x && x.path && !x.error);
+      return rows.length ? rows[0].path : '';
+    } catch (_) { return ''; }
+  };
   const smokeFolder = argAfter('--smoke-folder');
+  const smokeFolderIndex = Number(argAfter('--smoke-folder-index') || 0) || 0;
   log('开始冒烟测试 · trace=' + traceFile);
   const timer = setTimeout(() => { log('超时退出（90s）'); writeTrace(); app.exit(3); }, 90000);
   mainWindow.webContents.on('console-message', (_e, level, message, line, sourceId) => {
@@ -960,12 +1002,19 @@ function runSmokeTest() {
       if (smokeFolder) {
         const scan = await js(`window.PLT.file.scanFolder(${JSON.stringify(smokeFolder)})`).catch((e) => ({ error: e.message }));
         log('文件夹扫描：' + JSON.stringify(Array.isArray(scan) ? scan.map((x) => ({ name: x.name, kind: x.kind, sub: !!x.subtitlePath, error: x.error })) : scan));
-        const sim = await js(`window.__pltSmoke.simulateFolderOpen(${JSON.stringify(smokeFolder)}, 0)`).catch((e) => ({ error: e.message }));
-        log('文件夹打开（模拟点击第 1 条）：' + JSON.stringify(sim));
+        const sim = await js(`window.__pltSmoke.simulateFolderOpen(${JSON.stringify(smokeFolder)}, ${smokeFolderIndex})`).catch((e) => ({ error: e.message }));
+        log('文件夹打开（模拟点击第 ' + (smokeFolderIndex + 1) + ' 条）：' + JSON.stringify(sim));
         await new Promise((r) => setTimeout(r, 2600));
         const after = await js(`(() => {
           const v = document.getElementById('video');
-          return { state: window.__pltSmoke.state(), duration: v.duration, error: v.error ? v.error.code : null, readyState: v.readyState };
+          return {
+            state: window.__pltSmoke.state(),
+            duration: v.duration,
+            error: v.error ? v.error.code : null,
+            readyState: v.readyState,
+            overlay: document.getElementById('overlayEn').textContent.slice(0, 40),
+            subStatus: document.getElementById('sbSubs').textContent
+          };
         })()`);
         log('文件夹打开后状态：' + JSON.stringify(after));
         folderOk = !!(after.state && after.state.media) && after.duration > 0 && after.error === null;
