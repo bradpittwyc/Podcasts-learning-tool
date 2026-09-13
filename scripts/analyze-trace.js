@@ -111,6 +111,15 @@ if (i > 0) {
         return m.on === true && m.muteVisible === 'visible' && m.volVisible === 'hidden'
           && m.mediaMuted === true && centered
           && b.on === false && b.volVisible === 'visible' && b.muteVisible === 'hidden' && b.mediaMuted === false;
+      })()],
+      ['11a 设置齿轮用官方 Fluent 图标', (() => {
+        const r = obj['11a 设置齿轮图标'];
+        if (!r || r.error) return false;
+        // 官方 settings_24_regular：24 格视图、单条长 path、以 M12.0122 2.25 开头
+        return r.viewBox === '0 0 24 24' && r.shapeCount === 1
+          && r.pathLen > 1000 && String(r.pathHead || '').indexOf('M12.0122 2.25') === 0
+          && r.fills.length === 1 && r.fills[0] === 'currentColor'
+          && r.svgW === 20 && r.svgH === 20 && Number(r.centerDy) <= 1;
       })()]
     ];
     console.log('\n=== 断言明细 ===');

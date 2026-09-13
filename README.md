@@ -349,3 +349,11 @@ A：可以，各自独立的数据目录，互不影响。
 [MIT](LICENSE) © 2025 bradpittwyc
 
 第三方接口说明：单词发音使用有道词典公开语音接口（`dict.youdao.com/dictvoice`），仅在点击朗读时请求；不联网也能使用系统语音合成。
+
+第三方资源与致谢：
+
+| 资源 | 用途 | 许可 |
+| --- | --- | --- |
+| [Microsoft Fluent System Icons](https://github.com/microsoft/fluentui-system-icons) | 设置齿轮等界面图标 | MIT © Microsoft Corporation |
+| [ECDICT](https://github.com/skywind3000/ECDICT) | 内置离线词典（仅用于分级筛选，不参与释义） | MIT |
+| [有道词典语音接口](https://dict.youdao.com/dictvoice) | 单词真人发音 | 公开接口，点击时才请求 |

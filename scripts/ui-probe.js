@@ -585,6 +585,26 @@ function install(ctx) {
       return { muted, back };
     })()`);
 
+    // 设置齿轮必须是官方 Fluent 图标（此前手绘的直边齿轮很难看）
+    out['11a 设置齿轮图标'] = await run('11a', `(() => {
+      const btn = document.getElementById('btnSettings');
+      const svg = btn && btn.querySelector('svg');
+      const p = svg && svg.querySelector('path');
+      if (!svg || !p) return { error: '设置按钮没有图标' };
+      const r = svg.getBoundingClientRect();
+      const b = btn.getBoundingClientRect();
+      const d = p.getAttribute('d') || '';
+      return {
+        viewBox: svg.getAttribute('viewBox'),
+        pathLen: d.length,
+        pathHead: d.slice(0, 18),
+        fills: [...svg.querySelectorAll('path')].map((x) => x.getAttribute('fill')),
+        svgW: Math.round(r.width), svgH: Math.round(r.height),
+        centerDy: Math.abs((r.top + r.height / 2) - (b.top + b.height / 2)).toFixed(2),
+        shapeCount: svg.querySelectorAll('path, circle, rect').length
+      };
+    })()`);
+
     // 点一个「远低于 GRE 级别」的常用词，必须仍然能查（弹面板 + 真的发出请求）
     out['6b 低级别常用词仍可查'] = await run('6b', `(async () => {
       const before = window.__pltSmoke.costStats();

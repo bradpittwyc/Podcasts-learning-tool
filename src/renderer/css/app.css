@@ -131,7 +131,9 @@ button { cursor: default; border: none; background: none; }
 #trMute .ic-mute { visibility: hidden; }
 #trMute.on .ic-vol { visibility: hidden; }
 #trMute.on .ic-mute { visibility: visible; }
-#btnSettings svg { display: block; width: 18px; height: 18px; }
+/* Fluent 图标（微软官方 settings_24_regular）自带 24 格内边距，
+   20px 显示时齿轮实心部分约 16px，与相邻手绘图标的视觉重量相当 */
+#btnSettings svg { display: block; width: 20px; height: 20px; }
 
 #btnPlay .ic-pause, #trPlay .ic-pause, #miniPlay .ic-pause { visibility: hidden; }
 body.is-playing #btnPlay .ic-play,
