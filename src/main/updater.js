@@ -371,7 +371,7 @@ Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force
 async function check({ silent, force } = {}) {
   if (checking) return getState();
   if (!app.isPackaged && !force) {
-    return emit({ phase: 'unsupported', mode: 'none', current: app.getVersion(), error: '开发模式不检查更新' });
+    return emit({ phase: 'unsupported', mode: 'none', current: app.getVersion(), error: '开发模式（npm start）不检查更新，打包成安装版 / 便携版后可用' });
   }
   checking = true;
   const mode = (!app.isPackaged && force) ? 'portable' : updaterMode();

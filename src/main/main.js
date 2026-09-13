@@ -1491,6 +1491,10 @@ function runSmokeTest() {
       let rateOk = true;
       {
         const before = mainWindow.getBounds();
+        const wasMaximized = mainWindow.isMaximized();
+        // 最大化状态下 setSize 是无效的（上次运行可能把最大化状态存进了设置），
+        // 先还原窗口才能可靠地改尺寸；测完再把最大化还原回去
+        if (wasMaximized) { mainWindow.unmaximize(); await new Promise((r) => setTimeout(r, 600)); }
         const DEFAULT_W = 1480, DEFAULT_H = 920;
         const wideW = screen.getPrimaryDisplay().workAreaSize.width - 20;   // 尽量铺满屏幕（≈用户最大化）
         const inspect = () => js(`(async () => {
@@ -1550,6 +1554,7 @@ function runSmokeTest() {
         } catch (_) { /* 截图失败不影响判定 */ }
 
         mainWindow.setSize(before.width, before.height);
+        if (wasMaximized) mainWindow.maximize();
         await js(`(() => { const b = document.getElementById('dictClose'); if (b) b.click(); })()`).catch(() => { });
 
         // 静音图标留档：正常 / 静音 各截一张按钮 1:1

@@ -29,6 +29,8 @@
     unsupported: '当前运行方式不支持自动更新'
   };
 
+  const REPO_LABEL = '更新来自 GitHub Release · bradpittwyc/Podcasts-learning-tool';
+
   function phaseText(s) {
     if (s.phase === 'available' && s.latest) return `发现新版本 v${s.latest}`;
     if (s.phase === 'downloading') return `正在下载更新… ${s.percent || 0}%`;
@@ -82,6 +84,30 @@
     return res;
   }
 
+  /** 各阶段对应的图标 / 配色 / 文案（面板顶部那块状态区用） */
+  function statusMeta(s) {
+    switch (s.phase) {
+      case 'checking': return { cls: 'busy', icon: '⟳', title: '正在检查更新…', sub: '正在读取发布页上的最新版本' };
+      case 'uptodate': return { cls: 'ok', icon: '✓', title: '已是最新版本', sub: `当前版本 v${s.current || '?'} 就是最新版` };
+      case 'available': return { cls: 'new', icon: '⬆', title: `发现新版本 v${s.latest}`, sub: `当前版本 v${s.current || '?'} → 可升级到 v${s.latest}` };
+      case 'downloading': return { cls: 'busy', icon: '⬇', title: `正在下载更新… ${s.percent || 0}%`, sub: s.total ? `${fmtBytes(s.transferred)} / ${fmtBytes(s.total)}` : '正在下载' };
+      case 'downloaded': return { cls: 'ok', icon: '✓', title: `更新已下载完成`, sub: `v${s.latest} 已就绪，重启后生效` };
+      case 'installing': return { cls: 'busy', icon: '⟳', title: '正在安装…', sub: '程序即将自动重启' };
+      case 'error': return { cls: 'err', icon: '!', title: '检查更新失败', sub: s.error || '' };
+      case 'unsupported': return { cls: 'muted', icon: '–', title: '当前运行方式不支持自动更新', sub: s.error || '打包成安装版 / 便携版后即可自动更新' };
+      default: return { cls: 'muted', icon: '?', title: '尚未检查更新', sub: '点下面的「检查更新」试试' };
+    }
+  }
+
+  function relTime(ts) {
+    if (!ts) return '—';
+    const d = Date.now() - ts;
+    if (d < 60000) return '刚刚';
+    if (d < 3600000) return `${Math.floor(d / 60000)} 分钟前`;
+    if (d < 86400000) return `${Math.floor(d / 3600000)} 小时前`;
+    return `${Math.floor(d / 86400000)} 天前`;
+  }
+
   function progressBar() {
     const wrap = el('div', { class: 'upd-bar' }, [el('div', { class: 'upd-bar-fill' })]);
     const fill = wrap.firstChild;
@@ -98,37 +124,68 @@
   /** 帮助菜单「检查更新…」弹出的面板 */
   function modal() {
     const body = document.createDocumentFragment();
-    const line = el('div', { class: 'upd-line' });
-    const detail = el('div', { class: 'muted small upd-detail' });
-    const notes = el('div', { class: 'skip-note upd-notes hidden' });
+
+    // ① 状态区：圆形状态徽标 + 标题 + 说明
+    const dot = el('div', { class: 'upd-dot', text: '?' });
+    const title = el('div', { class: 'upd-title upd-line' });        // 保留 .upd-line 供断言使用
+    const sub = el('div', { class: 'upd-sub' });
+    const status = el('div', { class: 'upd-status' }, [dot, el('div', { class: 'upd-status-text' }, [title, sub])]);
+
+    // ② 信息网格：当前版本 / 最新版本 / 更新方式 / 上次检查
+    const infoCur = el('div', { class: 'upd-v' });
+    const infoLatest = el('div', { class: 'upd-v' });
+    const infoMode = el('div', { class: 'upd-v' });
+    const infoLast = el('div', { class: 'upd-v' });
+    const grid = el('div', { class: 'upd-grid' }, [
+      el('div', { class: 'upd-k', text: '当前版本' }), infoCur,
+      el('div', { class: 'upd-k', text: '更新方式' }), infoMode,
+      el('div', { class: 'upd-k', text: '最新版本' }), infoLatest,
+      el('div', { class: 'upd-k', text: '上次检查' }), infoLast
+    ]);
+
+    // ③ 进度条 + 进度数字
     const bar = progressBar();
+    const barPct = el('div', { class: 'upd-pct hidden' });
+
+    // ④ 更新说明（限高滚动）
+    const notesTitle = el('div', { class: 'upd-notes-title hidden', text: '更新说明' });
+    const notes = el('div', { class: 'upd-notes skip-note hidden' });
 
     const btnCheck = el('button', { class: 'cb-btn', text: '检查更新', onclick: async () => { await check(); } });
-    const btnGet = el('button', { class: 'cb-btn', text: '下载更新' });
+    const btnGet = el('button', { class: 'cb-btn accent', text: '下载更新' });
     const btnInstall = el('button', { class: 'cb-btn accent', text: '立即重启并安装' });
-    const btnPage = el('button', { class: 'cb-btn', text: '打开发布页', onclick: () => window.PLT.update.openRelease() });
+    const btnPage = el('button', { class: 'cb-btn subtle', text: '打开发布页', onclick: () => window.PLT.update.openRelease() });
+    const hint = el('div', { class: 'upd-hint', text: '只提示、不自动下载；可在 设置 → 高级 → 软件更新 里关掉自动检查' });
 
-    body.appendChild(line);
+    body.appendChild(status);
+    body.appendChild(grid);
     body.appendChild(bar);
-    body.appendChild(detail);
+    body.appendChild(barPct);
+    body.appendChild(notesTitle);
     body.appendChild(notes);
     body.appendChild(el('div', { class: 'row-gap' }, [btnCheck, btnGet, btnInstall, btnPage]));
+    body.appendChild(hint);
 
     const sync = (s) => {
-      line.textContent = phaseText(s);
-      line.className = 'upd-line' + (s.phase === 'error' ? ' err' : '');
-      const bits = [`当前版本 v${s.current || '?'}`];
-      if (s.latest) bits.push(`最新版本 v${s.latest}`);
-      if (s.phase === 'downloading' && s.total) bits.push(`${fmtBytes(s.transferred)} / ${fmtBytes(s.total)}`);
-      if (s.savedTo) bits.push(`保存到：${s.savedTo}`);
-      if (s.mode === 'portable') bits.push('便携版：下载完成后会自动替换 exe 并重启');
-      if (s.error) bits.push(s.error);
-      detail.textContent = bits.join(' · ');
+      const meta = statusMeta(s);
+      title.textContent = meta.title;
+      sub.textContent = meta.sub;
+      dot.textContent = meta.icon;
+      dot.className = 'upd-dot ' + meta.cls;
+      title.className = 'upd-title upd-line' + (meta.cls === 'err' ? ' err' : '');
+      infoCur.textContent = 'v' + (s.current || '?');
+      infoLatest.textContent = s.latest ? 'v' + s.latest : '—';
+      infoMode.textContent = s.mode === 'portable' ? '便携版（下载后自动换 exe）'
+        : s.mode === 'installer' ? '安装版（静默原地升级）' : '开发模式（不检查）';
+      infoLast.textContent = relTime(s.lastCheck);
+      barPct.textContent = `${s.percent || 0}%`;
+      const showsPct = ['downloading', 'downloaded', 'installing'].includes(s.phase);
+      barPct.classList.toggle('hidden', !showsPct);
       notes.classList.toggle('hidden', !s.notes);
-      if (s.notes) notes.textContent = String(s.notes).slice(0, 1200);
+      notesTitle.classList.toggle('hidden', !s.notes);
+      if (s.notes) notes.textContent = String(s.notes).slice(0, 1600);
       btnGet.classList.toggle('hidden', s.phase !== 'available');
-      btnInstall.classList.toggle('hidden', !['downloaded', 'available'].includes(s.phase));
-      if (s.phase === 'available') btnInstall.classList.add('hidden');   // 先下载再安装
+      btnInstall.classList.toggle('hidden', s.phase !== 'downloaded');
       btnCheck.disabled = s.phase === 'checking' || s.phase === 'downloading';
       btnGet.disabled = s.phase === 'downloading';
     };
@@ -139,7 +196,7 @@
 
     U.modal({
       title: '软件更新',
-      subtitle: '更新来自 GitHub Release（bradpittwyc/Podcasts-learning-tool）',
+      subtitle: '更新来自 GitHub Release · bradpittwyc/Podcasts-learning-tool',
       narrow: true,
       body,
       buttons: [{ label: '关闭', accent: true }]
@@ -153,18 +210,28 @@
     const wrap = el('div', {});
     wrap.appendChild(el('div', { class: 'section-title', text: '软件更新' }));
 
-    const status = el('div', { class: 'skip-note' });
+    const dot = el('div', { class: 'upd-dot', text: '?' });
+    const title = el('div', { class: 'upd-title' });
+    const sub = el('div', { class: 'upd-sub' });
+    const status = el('div', { class: 'upd-status' }, [dot, el('div', { class: 'upd-status-text' }, [title, sub])]);
     const bar = progressBar();
+    const barPct = el('div', { class: 'upd-pct hidden' });
+
     const sync = (s) => {
-      status.innerHTML = [
-        `当前版本：<b>v${U.escapeHtml(s.current || '?')}</b> · 更新方式：${s.mode === 'portable' ? '便携版（下载后自动替换 exe）' : (s.mode === 'installer' ? '安装版（静默安装）' : '开发模式（不检查）')}`,
-        `状态：${U.escapeHtml(phaseText(s))}${s.error ? '（' + U.escapeHtml(s.error) + '）' : ''}`
-      ].join('<br>');
+      const meta = statusMeta(s);
+      dot.textContent = meta.icon;
+      dot.className = 'upd-dot ' + meta.cls;
+      title.textContent = meta.title;
+      sub.textContent = `${meta.sub}${s.mode && s.mode !== 'none' ? '' : ''}`;
+      barPct.textContent = `${s.percent || 0}%`;
+      barPct.classList.toggle('hidden', !['downloading', 'downloaded', 'installing'].includes(s.phase));
     };
     subscribers.push(sync);
     sync(state);
+
     wrap.appendChild(status);
     wrap.appendChild(bar);
+    wrap.appendChild(barPct);
 
     const auto = el('input', { type: 'checkbox' });
     auto.checked = settings.update ? settings.update.autoCheck !== false : true;
@@ -177,7 +244,7 @@
     wrap.appendChild(el('div', { class: 'row-gap' }, [
       el('button', { class: 'cb-btn', text: '检查更新', onclick: async () => { const r = await check(); if (r && r.phase === 'uptodate') toast('已是最新版本 v' + r.latest, 'ok'); } }),
       el('button', { class: 'cb-btn', text: '更新详情…', onclick: () => modal() }),
-      el('button', { class: 'cb-btn', text: '打开发布页', onclick: () => window.PLT.update.openRelease() })
+      el('button', { class: 'cb-btn subtle', text: '打开发布页', onclick: () => window.PLT.update.openRelease() })
     ]));
     return wrap;
   }
