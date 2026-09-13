@@ -180,38 +180,35 @@ function clearCache() {
 // ─────────────────────────────────────────────────────────────
 // 提示词
 // ─────────────────────────────────────────────────────────────
-const SYSTEM_PROMPT = `You are a precise bilingual (English→Simplified Chinese) lexicographer and CEFR vocabulary rater.
-You support English learners who are practicing shadowing with podcasts and videos.
-
-TASK
-For every item in the user's JSON array you receive {i, w, c} where:
-  i = index, w = the word/phrase as it appears, c = the sentence it came from (context).
-
-Return STRICT JSON only (no markdown fence, no commentary) with this exact shape:
-{"items":[{"i":0,"lemma":"dictionary base form","phonetic":"/.../","pos":"n.","cefr":"B2","examLevels":["IELTS"],"isAcademic":false,"isIdiom":false,"rare":false,"shouldExplain":true,"translation":"简明中文释义(结合语境)","enDef":"short English definition","example":"one short English example sentence","exampleZh":"例句中文翻译"}]}
-
-RULES
-1. cefr MUST be one of "A1","A2","B1","B2","C1","C2". Judge the difficulty for an adult Chinese learner of English, not for a native child.
-2. examLevels: include any of "IELTS","TOEFL","GRE" for which this word is a typical/required vocabulary item. Use [] when none.
-3. isAcademic = true for Academic Word List / general academic vocabulary. isIdiom = true for idioms, phrasal verbs and fixed expressions. rare = true for literary, archaic or highly specialized words.
-4. shouldExplain is THE COST-CONTROL FLAG. The user's target level is given as TARGET_LEVEL. Set shouldExplain=false when the word is clearly BELOW that target (e.g. basic everyday words such as "the","get","happy","people","work"), and true when the word is AT or ABOVE the target and a learner at that level would genuinely need help.
-   • TARGET_LEVEL=NONE means always shouldExplain=true.
-   • When shouldExplain=false you may still fill cefr but set translation, enDef, example, exampleZh to "".
-   • Functional words (articles, pronouns, auxiliaries, basic prepositions), proper nouns, and numbers are always shouldExplain=false.
-5. translation must disambiguate using the given context c, and stay short (≤ 14 Chinese characters) — it is displayed inline next to the word.
-6. lemma = base form (e.g. "running"→"run", "better"→"good"); for multi-word units keep the phrase as-is.
-7. Return exactly one output item per input item, same "i" values, same order, no omissions.`;
+// ─────────────────────────────────────────────────────────────
+// 提示词（精简版：只要求「点选后弹框」真正需要的字段，不含例句）
+// 每一 token 都直接影响点选成本 —— 系统提示在每次单词查询里都要重发一遍。
+// ─────────────────────────────────────────────────────────────
+const SYSTEM_PROMPT = `Bilingual EN->Simplified-Chinese lexicographer for Chinese learners of English.
+Input: JSON {"i":int,"w":word,"c":the sentence it appears in}.
+Output STRICT JSON, no prose:
+{"r":[{"i":0,"lemma":"base form","ph":"/.../","pos":"n.","cefr":"B2","ex":["TOEFL"],"ac":false,"idi":false,"rare":false,"ok":true,"zh":"简明中文释义","en":"short English definition"}]}
+Rules:
+1 cefr one of A1,A2,B1,B2,C1,C2 - difficulty for an adult Chinese learner.
+2 ex: any of IELTS,TOEFL,GRE this word belongs to; else [].
+3 ac=academic word; idi=idiom/phrasal verb; rare=literary or highly specialized.
+4 ok is the only cost-control flag: false when the word is clearly BELOW target level L given in the user message, otherwise true. Functional words, proper nouns and numbers are always false. When ok=false set zh and en to "".
+5 zh <= 14 Chinese characters, disambiguated by context c. en <= 12 words.
+6 lemma = base form (running->run, better->good); keep multi-word units as-is.
+7 One output item per input item, same i and order, no omissions.`;
 
 function buildUserPrompt(items, ctx = {}) {
   const level = LEVEL_BY_ID[ctx.level] || LEVEL_BY_ID.none;
-  const lines = [];
-  lines.push(`TARGET_LEVEL=${level.id.toUpperCase()}${level.cefr ? ` (${level.cefr})` : ''}`);
-  if (level.exam) lines.push(`TARGET_EXAM=${level.exam}`);
-  lines.push(`EXPLAIN_IN=${ctx.explainInChinese === false ? 'English' : 'Simplified Chinese'}`);
-  if (ctx.topic) lines.push(`MATERIAL=${String(ctx.topic).slice(0, 120)}`);
-  lines.push('');
-  lines.push(JSON.stringify({ items: items.map((it, idx) => ({ i: idx, w: it.word, c: (it.context || '').slice(0, 160) })) }));
-  return lines.join('\n');
+  const list = items.map((it, idx) => ({
+    i: idx,
+    w: it.word,
+    c: (it.context || '').slice(0, ctx.contextChars || 160)
+  }));
+  return `L=${level.id.toUpperCase()}${level.cefr ? '/' + level.cefr : ''}`
+    + (level.exam ? ` exam=${level.exam}` : '')
+    + (ctx.explainInChinese === false ? ' out=EN' : '')
+    + (ctx.topic ? ` topic=${String(ctx.topic).slice(0, 60)}` : '')
+    + `\n${JSON.stringify({ r: list })}`;
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -327,24 +324,32 @@ async function chatJSON(messages, opts = {}) {
 // ─────────────────────────────────────────────────────────────
 // 取词主流程
 // ─────────────────────────────────────────────────────────────
+/** 解析模型返回项；兼容精简键名(zh/en/ph/ex/ac/idi/ok)与旧的长键名 */
 function normalizeEntry(raw, originalWord, levelId) {
   if (!raw) return null;
-  const cefr = (raw.cefr || '').toString().toUpperCase().replace(/[^A-Z0-9+]/g, '') || '';
+  const pick = (...keys) => {
+    for (const k of keys) {
+      if (raw[k] !== undefined && raw[k] !== null && raw[k] !== '') return raw[k];
+    }
+    return undefined;
+  };
+  const rawCefr = String(pick('cefr') || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+  const rawExams = pick('exams', 'ex', 'examLevels');
   const entry = {
     word: originalWord,
-    lemma: (raw.lemma || originalWord || '').toString().trim(),
-    phonetic: (raw.phonetic || '').toString().trim(),
-    pos: (raw.pos || '').toString().trim(),
-    cefr: /^(A1|A2|B1|B2|C1|C2)$/.test(cefr) ? cefr : (cefr || 'B1'),
-    examLevels: Array.isArray(raw.examLevels) ? raw.examLevels.map((x) => String(x).toUpperCase()).filter(Boolean) : [],
-    isAcademic: !!raw.isAcademic,
-    isIdiom: !!raw.isIdiom,
+    lemma: String(pick('lemma') || originalWord || '').trim(),
+    phonetic: String(pick('phonetic', 'ph') || '').trim(),
+    pos: String(pick('pos') || '').trim(),
+    cefr: /^(A1|A2|B1|B2|C1|C2)$/.test(rawCefr) ? rawCefr : (rawCefr || 'B1'),
+    examLevels: Array.isArray(rawExams) ? rawExams.map((x) => String(x).toUpperCase()).filter(Boolean) : [],
+    isAcademic: !!(pick('isAcademic', 'ac') || false),
+    isIdiom: !!(pick('isIdiom', 'idi') || false),
     rare: !!raw.rare,
-    shouldExplain: raw.shouldExplain !== false,
-    translation: (raw.translation || '').toString().trim(),
-    enDef: (raw.enDef || '').toString().trim(),
-    example: (raw.example || '').toString().trim(),
-    exampleZh: (raw.exampleZh || '').toString().trim(),
+    shouldExplain: pick('shouldExplain', 'ok') !== false,
+    translation: String(pick('translation', 'zh') || '').trim(),
+    enDef: String(pick('enDef', 'en') || '').trim(),
+    example: String(pick('example') || '').trim(),
+    exampleZh: String(pick('exampleZh') || '').trim(),
     lookedUpAt: Date.now()
   };
   if (!entry.translation && !entry.enDef && entry.shouldExplain) entry.shouldExplain = false;
@@ -454,7 +459,9 @@ async function lookupBatch(requests, options = {}) {
       results.usage.completion_tokens += resp.usage.completion_tokens || 0;
       results.usage.total_tokens += resp.usage.total_tokens || 0;
     }
-    const items = Array.isArray(resp.json?.items) ? resp.json.items : [];
+    const parsed = resp.json || {};
+    const items = Array.isArray(parsed.r) ? parsed.r
+      : (Array.isArray(parsed.items) ? parsed.items : []);   // r = 精简键，items = 兼容旧格式
     const byIndex = new Map();
     for (const it of items) {
       const idx = Number(it.i);
@@ -544,6 +551,8 @@ async function lookupTiered(requests, options = {}) {
   const useLocal = options.localDict !== undefined ? !!options.localDict : !!s.get('lookup.localDict', true);
   const llmForContext = options.llmForContext !== undefined ? !!options.llmForContext : !!s.get('lookup.llmForContext', true);
   const list = (requests || []).map((r) => ({ word: String(r.word || '').trim(), context: r.context || '' })).filter((r) => r.word);
+  // skipLocal：单词查询（点选弹释义）走这条路 —— 本地词典只负责分级筛选，不在这里出释义
+  const skipLocal = !!options.skipLocal;
 
   const result = {
     ok: true,
@@ -562,10 +571,16 @@ async function lookupTiered(requests, options = {}) {
   };
   if (!list.length) return result;
 
-  // ① 本地词典分级
-  const local = useLocal
+  // ① 本地词典分级（skipLocal 时全部交给 AI）
+  const local = (useLocal && !skipLocal)
     ? localDict.lookupBatch(list, { level: levelId, lockLevel, llmForContext })
-    : { entries: {}, skipped: {}, below: {}, needLlm: list.map((r) => ({ ...r, reason: 'local-disabled' })), stats: { localHits: 0, blocked: 0, needLlm: list.length, total: list.length } };
+    : {
+        entries: {},
+        skipped: {},
+        below: {},
+        needLlm: list.map((r) => ({ ...r, reason: skipLocal ? 'skip-local' : 'local-disabled' })),
+        stats: { localHits: 0, blocked: 0, needLlm: list.length, total: list.length }
+      };
 
   Object.assign(result.entries, local.entries);
   Object.assign(result.below, local.below);

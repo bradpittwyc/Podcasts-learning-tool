@@ -508,22 +508,36 @@ function install(ctx) {
       };
     })()`);
 
-    // 点击锁定词：应无面板、无请求、无提示
+    // 点击锁定词：应完全无反应 —— 不弹面板、不跳转、不选中整行、无提示、无请求
     out['6b2 点锁定词无反应'] = await run('6b2', `(async () => {
       const before = window.__pltSmoke.costStats();
+      const v = document.getElementById('video');
+      v.pause();                                   // 排除播放导致的 currentTime 漂移
       document.getElementById('dictPanel').classList.add('hidden');
       document.getElementById('paneBody').classList.remove('dict-open');
+      document.querySelectorAll('#transcript .cue.selected').forEach((n) => n.classList.remove('selected'));
+      document.querySelectorAll('#transcript .w.active').forEach((n) => n.classList.remove('active'));
+      document.querySelectorAll('#toastHost .toast').forEach((n) => n.remove());
+      await new Promise((r) => setTimeout(r, 300));
       const target = [...document.querySelectorAll('#transcript .w.locked')][0];
       if (!target) return { error: '没有锁定词可点' };
+      const timeBefore = v.currentTime;
+      const lineBefore = document.querySelectorAll('#transcript .cue.current')[0];
+      const currentLineIndex = lineBefore ? lineBefore.dataset.index : null;
       target.click();
-      await new Promise((r) => setTimeout(r, 1500));
+      await new Promise((r) => setTimeout(r, 1200));
       const after = window.__pltSmoke.costStats();
+      const lineAfter = document.querySelectorAll('#transcript .cue.current')[0];
       return {
         clicked: target.dataset.lower,
         cefr: target.dataset.cefr,
         panelVisible: !document.getElementById('dictPanel').classList.contains('hidden'),
-        apiCallsDelta: after.calls - before.calls,
-        toastCount: document.querySelectorAll('#toastHost .toast').length
+        selectedLines: document.querySelectorAll('#transcript .cue.selected').length,
+        activeWords: document.querySelectorAll('#transcript .w.active').length,
+        toasts: document.querySelectorAll('#toastHost .toast').length,
+        currentLineChanged: (lineAfter ? lineAfter.dataset.index : null) !== currentLineIndex,
+        timeMoved: Math.abs(v.currentTime - timeBefore) > 0.05,
+        apiCallsDelta: after.calls - before.calls
       };
     })()`);
 

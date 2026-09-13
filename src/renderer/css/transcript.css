@@ -132,9 +132,9 @@
 }
 .w:hover { background: var(--accent-light); color: var(--accent-2); }
 .w.active { background: var(--accent); color: var(--accent-text); }
-/* 级别锁定：只是不可点击，不改颜色、不加删除线、不加任何标记 */
-.w.locked { cursor: not-allowed; }
-.w.locked:hover { background: transparent; color: inherit; }
+/* 级别锁定：纯不可点击 —— 不改颜色、不加删除线、悬停无反馈、不选中整行、无任何标记 */
+.w.locked,
+.w.locked:hover { cursor: not-allowed; background: transparent; color: inherit; }
 
 /* ── 编辑模式 ── */
 .transcript.editing .w { cursor: text; }

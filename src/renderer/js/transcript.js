@@ -66,6 +66,12 @@
     onClick(e) {
       const wordEl = e.target.closest('.w');
       if (wordEl && !this.editing) {
+        // 级别锁定的词 = 纯不可点击：不选中整行、不跳转、不查词、无任何视觉反馈
+        if (wordEl.classList.contains('locked')) {
+          e.preventDefault();
+          e.stopPropagation();
+          return;
+        }
         e.preventDefault();
         e.stopPropagation();
         const cueEl = wordEl.closest('.cue');

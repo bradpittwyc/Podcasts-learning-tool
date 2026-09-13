@@ -39,8 +39,9 @@ const DEFAULT_SETTINGS = {
     maxWordsPerRequest: 40,
     pronounce: 'us',             // us | uk | none
     contextChars: 160,
-    localDict: true,             // 优先使用离线本地词典（0 费用）
-    llmForContext: true          // 仅当本地词典命中但需要语境/背景时追加 AI 分析
+    // 本地词典只用于「分级筛选」（决定哪些词可被选中），点选后的释义一律走大模型
+    localDict: true,
+    llmForContext: false
   },
   // ── 播放器 ───────────────────────────────────────────────────
   player: {

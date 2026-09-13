@@ -748,41 +748,37 @@ function registerIpc() {
       return { ok: false, code: err.code || 'ERROR', error: err.message, partial: err.partial || null };
     }
   });
+  /**
+   * 单词查询（点选后弹出的释义卡片）—— 一律走大模型，以获得结合语境的准确释义。
+   * 本地词典只用于「分级筛选」（哪些词可被选中），不参与这里出释义。
+   */
   ipcMain.handle('llm:lookupWord', async (_e, payload) => {
     try {
       const { word, context, options } = payload || {};
       const s = store.settings();
       const levelId = (options && options.level) || s.get('lookup.level', 'toefl');
       const lockLevel = s.get('lookup.lockLevel', false);
-      const useLocal = s.get('lookup.localDict', true);
       const force = !!(options && options.force);
 
-      // ① 本地词典优先
-      const hit = useLocal ? localDict.get(word) : null;
-      if (hit) {
-        const atLevel = localDict.meetsTier(hit, levelId);
-        const expanded = localDict.lookupBatch([{ word, context }], { level: levelId, lockLevel: false }).entries[String(word).toLowerCase()];
-        if (!atLevel && lockLevel && !force) {
+      // 级别锁定：本地有该词且低于所选级别时直接拦下（不产生任何请求）
+      if (lockLevel && !force && s.get('lookup.localDict', true)) {
+        const hit = localDict.get(word);
+        if (hit && !localDict.meetsTier(hit, levelId)) {
+          const expanded = localDict.lookupBatch([{ word, context }], { level: levelId, lockLevel: false }).entries[String(word).toLowerCase()];
           return { ok: true, entry: null, blocked: true, reason: 'below-level-locked', cefr: expanded ? expanded.cefr : '', toApi: 0, fromCache: 0 };
         }
-        // 难词且需要语境 → 追加 AI 分析；否则直接用本地释义（0 费用）
-        const wantAi = force || (atLevel && s.get('lookup.llmForContext', true) && localDict.needsContext(hit));
-        if (!wantAi) {
-          return { ok: true, entry: expanded, toApi: 0, fromCache: 0, source: 'local' };
-        }
-        const tier = await llm.lookupTiered([{ word, context }], { level: levelId, lockLevel, force: true });
-        const key = String(word).toLowerCase();
-        const entry = tier.entries[key] || expanded;
-        return { ok: true, entry, toApi: tier.stats.aiCalls, fromCache: tier.stats.aiSkippedByCache, usage: tier.usage, source: entry ? entry.source : 'local' };
       }
 
-      // ② 本地没有 → 大模型（仍遵守级别锁定）
-      const tier = await llm.lookupTiered([{ word, context }], { level: levelId, lockLevel, localDict: false });
+      const tier = await llm.lookupTiered([{ word, context }], { level: levelId, lockLevel: false, skipLocal: true, force: true });
       const key = String(word).toLowerCase();
-      if (tier.blocked && tier.blocked[key]) {
-        return { ok: true, entry: null, blocked: true, reason: 'below-level-locked', toApi: 0, fromCache: 0 };
-      }
-      return { ok: true, entry: tier.entries[key] || null, toApi: tier.stats.aiCalls, fromCache: tier.stats.aiSkippedByCache, usage: tier.usage, source: 'ai' };
+      return {
+        ok: true,
+        entry: tier.entries[key] || null,
+        toApi: tier.stats.aiCalls,
+        fromCache: tier.stats.aiSkippedByCache,
+        usage: tier.usage,
+        source: 'ai'
+      };
     } catch (err) {
       return { ok: false, code: err.code || 'ERROR', error: err.message, partial: err.partial || null };
     }

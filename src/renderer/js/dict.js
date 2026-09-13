@@ -53,7 +53,7 @@
       try { return await window.PLT.dict.stats(); } catch (_) { return { loaded: false, size: 0 }; }
     }
 
-    /** 查询单个词：① 本地词典优先（0 费用）② 锁定级别时拦下低级别词 ③ 只在需要时调用 AI */
+    /** 查询单个词：释义一律走大模型（结合语境给义项）；级别锁定时先在本地拦下低级别词 */
     async lookupWord(word, cue, options) {
       const key = String(word || '').toLowerCase();
       if (!key) return null;
@@ -76,7 +76,7 @@
               message: '该词低于当前取词级别，且已开启级别锁定 —— 已拦截，不产生任何费用。'
             };
           }
-          if (!res.entry) return { error: 'NO_DATA', message: '没有查到该词（本地词典未收录，AI 也未返回结果）' };
+          if (!res.entry) return { error: 'NO_DATA', message: '大模型没有返回该词的解释，可点「重新查询」再试。' };
           return { entry: res.entry };
         } catch (err) {
           return { error: 'EXCEPTION', message: err.message };
@@ -263,11 +263,8 @@
 
       const entry = this.current;
       for (const t of U.buildTags(entry)) this.tagsEl.appendChild(el('span', { class: `tag ${t.cls}`, text: t.text }));
-      // 释义来源：本地词典（免费） / AI（语境分析）
-      this.tagsEl.appendChild(el('span', {
-        class: `tag ${entry.source === 'ai' ? 'ai' : 'local'}`,
-        text: entry.source === 'ai' ? 'AI 语境' : '本地词典'
-      }));
+      // 点选查词的释义统一由大模型结合语境生成
+      this.tagsEl.appendChild(el('span', { class: 'tag ai', text: 'AI 语境释义' }));
 
       if (entry.translation) {
         this.body.appendChild(el('div', { class: 'dict-sec' }, [
@@ -277,8 +274,6 @@
             document.createTextNode(entry.translationFull && entry.translationFull.length > entry.translation.length ? entry.translationFull : entry.translation)
           ])
         ]));
-      } else if (entry.source === 'local') {
-        this.body.appendChild(el('div', { class: 'skip-note', text: '本地词典没有中文释义，点「重新查询」让 AI 结合语境解释一次。' }));
       }
       if (entry.enDef) {
         this.body.appendChild(el('div', { class: 'dict-sec' }, [el('h4', { text: 'English Definition' }), el('div', { class: 'dict-en', text: entry.enDef })]));

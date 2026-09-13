@@ -37,8 +37,13 @@ if (i > 0) {
         return r.lockedCount > 10 && r.allNotAllowed === true && r.noneStruck === true
           && r.noneHasTitle === true && r.colorUnchanged === true;
       })()],
-      ['6b2 点锁定词不弹面板', obj['6b2 点锁定词无反应'] && obj['6b2 点锁定词无反应'].panelVisible === false
-        && obj['6b2 点锁定词无反应'].apiCallsDelta === 0],
+      ['6b2 点锁定词完全无反应', (() => {
+        const r = obj['6b2 点锁定词无反应'];
+        if (!r) return false;
+        return r.panelVisible === false && r.selectedLines === 0 && r.activeWords === 0
+          && r.toasts === 0 && r.currentLineChanged === false && r.timeMoved === false
+          && r.apiCallsDelta === 0;
+      })()],
       ['2b 进度条拖动到 50%', obj['2b 拖动到 50%'] && obj['2b 拖动到 50%'].tUp > 20],
       ['3a 点字幕跳转（不回到开头）', obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'] && obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'].after > 30],
       ['4a 字幕菜单可用', obj['4a 字幕按钮与菜单'] && obj['4a 字幕按钮与菜单'].menuVisible],

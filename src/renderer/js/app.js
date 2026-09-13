@@ -1206,35 +1206,23 @@
     // 级别锁定：低级别词是不可点击状态 —— 完全静默，不弹面板、不查询、不提示
     if (span && span.classList.contains('locked')) return;
 
-    // 单击：面板查询（手动点击忽略级别过滤）；已扫描过的词直接渲染，零成本
+    // 点选查词：释义卡片一律走大模型（结合语境，比本地词典的义项更准）。
+    // 本地词典只用于分级筛选（哪些词可被选中），不在这里出释义。
     $$('.w.active').forEach((n) => n.classList.remove('active'));
     if (span) span.classList.add('active');
-    const cached = transcript.lookupWord(word);
-    if (cached && cached.lemma && (cached.translation || cached.enDef)) {
-      const entry = {
-        word, lemma: cached.lemma, phonetic: cached.phonetic || '', pos: cached.pos || '',
-        cefr: cached.cefr, examLevels: cached.examLevels || [], isAcademic: cached.isAcademic,
-        isIdiom: cached.isIdiom, rare: cached.rare, translation: cached.translation || '',
-        enDef: cached.enDef || '', example: cached.example || '', exampleZh: cached.exampleZh || ''
-      };
-      dictPanel.currentWord = word;
-      dictPanel.render(word, { entry }, cue);
-      paintMode();
-      return;
-    }
     const res = await dictPanel.load(word, cue);
     const result = dictPanel.current;
     if (result) {
+      // 把 AI 结果并入词表：只用于后续同一词的快速展示与生词本，不改动正文外观
       transcript.setWord(word, {
         status: result.translation ? 'hit' : 'queried',
         lemma: result.lemma, cefr: result.cefr, examLevels: result.examLevels,
         phonetic: result.phonetic, pos: result.pos, enDef: result.enDef,
         example: result.example, exampleZh: result.exampleZh,
         isAcademic: result.isAcademic, isIdiom: result.isIdiom, rare: result.rare,
-        translation: result.translation, source: result.source
+        translation: result.translation, source: result.source || 'ai'
       });
     } else if (res && res.blocked) {
-      // 级别锁定拦截：不高亮、不显示释义
       transcript.setWord(word, { status: 'blocked', cefr: res.cefr || '' });
     }
     paintCost();
@@ -1346,7 +1334,6 @@
 
       if (!(opts && opts.silent)) toast(msg, 'ok', 6500);
       else if (hits) toast(`已自动标出 ${hits} 个难词（${lvShort} 及以上）${s.usage ? '' : ' · 本地词典，0 费用'}`, 'ok', 5200);
-      if (s.blockedCount) toast(`级别锁定：标记了 ${s.blockedCount} 个低于级别的词为不可取词`, 'warn', 4200);
 
       $('#sbCost').title = [
         `本地词典命中：${s.localHits || 0} 词（免费）`,
