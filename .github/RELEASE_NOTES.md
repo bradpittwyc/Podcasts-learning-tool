@@ -6,8 +6,8 @@
 
 | 文件 | 适用场景 |
 | --- | --- |
-| **`Podcasts Learning Tool-Portable-1.0.0.exe`** | **绿色便携版**：双击即用，所有数据（设置/生词本/缓存/录音）存在 exe 同目录 `PodcastsLearningData\`，U 盘即插即用，删除即卸载 |
-| `Podcasts Learning Tool-Setup-1.0.0.exe` | 安装版：开始菜单 + 桌面快捷方式，数据存于 `%APPDATA%\Podcasts Learning Tool` |
+| **`Podcasts Learning Tool-Portable-1.0.0.exe`** | **绿色便携版（推荐）**：双击即用，所有数据（设置/生词本/缓存/录音）存在 exe 同目录 `PodcastsLearningData\`，U 盘即插即用，删除即卸载。**已内置试用 API Key —— 装完即可点选查词** |
+| `Podcasts Learning Tool-Setup-1.0.0.exe` | 安装版：开始菜单 + 桌面快捷方式，数据存于 `%APPDATA%\Podcasts Learning Tool`。**不含 Key**，需在 ⚙ 设置里填自己的 Key |
 
 > 未签名程序首次运行可能被 SmartScreen 拦截：点「更多信息 → 仍要运行」即可。
 
@@ -27,8 +27,9 @@
 
 1. 打开软件 → 拖入 MP4/MP3（同名字幕会自动加载）
 2. 顶栏「取词级别」选**托福**，点「扫描难词」→ 全文难词高亮并显示中文，点任意单词查看详解
-3. 直接能用：本版**已内置试用 API Key**，点选查词开箱即用；想用自己的额度可在 ⚙ 设置 → 大模型 里替换
+3. 点选查词：**便携版已内置试用 Key，直接可用**；安装版请在 ⚙ 设置 → 大模型 里粘贴自己的 Key
 
 > 内置的是试用 Key，可能被限流或余额用尽；长期使用建议换成[自己申请的 Key](https://platform.deepseek.com/)（约 ¥1 / 百万 tokens）。
+> **不填 Key 也能用**：播放、字幕、校对、跟读、生词本、本地词典分级取词、全文难词扫描全部可用，只有「释义」需要 Key。
 
 详细的快捷键、省钱原理与常见问题见 [README](https://github.com/bradpittwyc/Podcasts-learning-tool#readme)。

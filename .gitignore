@@ -47,3 +47,4 @@ src/main/default-key.js
 resources/local-dict.json
 resources/local-dict.json.gz
 .tmp-dict/
+release-public/
