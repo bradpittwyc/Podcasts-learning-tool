@@ -475,6 +475,50 @@ function install(ctx) {
       };
     })()`);
 
+    // ───────── 7. 自动更新界面（注入状态验证渲染，真连 GitHub 由 --smoke-update 验证）─────────
+    out['7a 状态栏更新角标'] = await run('7a', `(async () => {
+      const badge = document.getElementById('sbUpdate');
+      const scripts = [...document.querySelectorAll('script[src]')].map((s) => s.getAttribute('src'));
+      if (!window.PLTUpdate) {
+        return { error: 'PLTUpdate 未加载', hasBadge: !!badge, scripts, pageErrors: (window.__pltErrors || []).slice(-5) };
+      }
+      const hiddenAtIdle = badge.classList.contains('hidden');
+      window.PLTUpdate.__inject({ phase: 'available', latest: '9.9.9', current: '1.0.0', mode: 'portable' });
+      await new Promise((r) => setTimeout(r, 120));
+      const shown = !badge.classList.contains('hidden');
+      return { hiddenAtIdle, shown, text: badge.textContent, cursor: getComputedStyle(badge).cursor };
+    })()`);
+
+    out['7b 更新面板与下载进度'] = await run('7b', `(async () => {
+      window.PLTUpdate.modal();
+      await new Promise((r) => setTimeout(r, 200));
+      const modal = [...document.querySelectorAll('.modal')].pop();
+      const line = modal ? modal.querySelector('.upd-line') : null;
+      const btns = modal ? [...modal.querySelectorAll('.cb-btn')].map((b) => b.textContent.trim()) : [];
+      const getBtn = modal ? [...modal.querySelectorAll('.cb-btn')].find((b) => b.textContent.includes('下载更新')) : null;
+      const visibleAtAvailable = getBtn ? !getBtn.classList.contains('hidden') : false;
+      window.PLTUpdate.__inject({ phase: 'downloading', latest: '9.9.9', percent: 42, transferred: 4200000, total: 10000000 });
+      await new Promise((r) => setTimeout(r, 120));
+      const bar = modal ? modal.querySelector('.upd-bar') : null;
+      const fill = modal ? modal.querySelector('.upd-bar-fill') : null;
+      const badgeText = document.getElementById('sbUpdate').textContent;
+      const res = {
+        hasLine: !!line,
+        lineText: line ? line.textContent : '',
+        buttons: btns,
+        downloadVisibleAtAvailable: visibleAtAvailable,
+        barVisible: bar ? !bar.classList.contains('hidden') : false,
+        barWidth: fill ? fill.style.width : '',
+        badgeText
+      };
+      // 收尾：关掉面板并把角标恢复到真实状态
+      const close = modal ? modal.querySelector('.modal-close, .cb-btn.accent') : null;
+      if (close) close.click();
+      window.PLTUpdate.refresh();
+      await new Promise((r) => setTimeout(r, 150));
+      return res;
+    })()`);
+
     // 点一个「远低于 GRE 级别」的常用词，必须仍然能查（弹面板 + 真的发出请求）
     out['6b 低级别常用词仍可查'] = await run('6b', `(async () => {
       const before = window.__pltSmoke.costStats();

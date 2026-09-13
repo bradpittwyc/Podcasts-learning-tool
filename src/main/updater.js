@@ -300,7 +300,8 @@ async function check({ silent, force } = {}) {
 }
 
 async function download() {
-  const mode = state.mode === 'portable' || !app.isPackaged ? (state.mode === 'installer' ? 'installer' : 'portable') : updaterMode();
+  // 开发模式（--smoke-update）下没有 electron-updater 的 app-update.yml，统一走便携版通路
+  const mode = app.isPackaged ? updaterMode() : 'portable';
   if (state.phase === 'downloading') return getState();
   if (mode === 'installer') {
     try {

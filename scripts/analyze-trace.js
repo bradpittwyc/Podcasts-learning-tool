@@ -61,6 +61,19 @@ if (i > 0) {
         if (!r) return false;
         return r.loadingShown === true && r.loadingText === '思考中........'
           && r.spinnerCount === 1 && r.panelVisible === true && r.replacedAfterLoad === true;
+      })()],
+      ['7a 有更新时状态栏出现角标', (() => {
+        const r = obj['7a 状态栏更新角标'];
+        if (!r) return false;
+        return r.hiddenAtIdle === true && r.shown === true
+          && /有新版本/.test(r.text || '') && r.cursor === 'pointer';
+      })()],
+      ['7b 更新面板：按钮/进度条随状态变化', (() => {
+        const r = obj['7b 更新面板与下载进度'];
+        if (!r) return false;
+        return r.hasLine === true && r.downloadVisibleAtAvailable === true
+          && r.barVisible === true && r.barWidth === '42%'
+          && r.buttons.includes('立即重启并安装') && /下载中/.test(r.badgeText || '');
       })()]
     ];
     console.log('\n=== 断言明细 ===');

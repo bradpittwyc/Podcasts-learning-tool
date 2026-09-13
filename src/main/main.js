@@ -1330,6 +1330,28 @@ function runSmokeTest() {
         log('截图（加载态）：' + out.replace(/\.png$/i, '-loading.png'));
       }
 
+      // 更新面板截图（注入「发现新版本」状态，纯界面留档）
+      const updClip = await js(`(() => {
+        if (!window.PLTUpdate) return null;
+        window.PLTUpdate.__inject({
+          phase: 'available', latest: '9.9.9', current: '1.0.0', mode: 'portable',
+          notes: '示例：本版新增自动升级；安装版静默原地升级，便携版退出后自动换包重启。'
+        });
+        window.PLTUpdate.modal();
+        const box = document.querySelector('#modalHost .modal');
+        if (!box) return null;
+        const r = box.getBoundingClientRect();
+        return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: Math.round(r.height) };
+      })()`).catch(() => null);
+      if (updClip && updClip.width) {
+        await new Promise((r) => setTimeout(r, 400));
+        const shotU = await mainWindow.webContents.capturePage(updClip);
+        fs.writeFileSync(out.replace(/\.png$/i, '-update.png'), shotU.toPNG());
+        log('截图（更新面板）：' + out.replace(/\.png$/i, '-update.png'));
+        await js(`(() => { const b = document.querySelector('#modalHost .modal-head .icon-btn'); if (b) b.click(); window.PLTUpdate.refresh(); })()`).catch(() => {});
+        await new Promise((r) => setTimeout(r, 300));
+      }
+
       // 第五张：词典标题区 1:1 裁剪（诊断“单词显示块”排版）
       const headClip = await js(`(() => {
         const r = document.getElementById('dictPanel').getBoundingClientRect();
@@ -1449,6 +1471,16 @@ function runSmokeTest() {
           try { exists = fs.existsSync(dl.savedTo); size = exists ? fs.statSync(dl.savedTo).size : 0; } catch (_) {}
           log('【更新·下载】' + JSON.stringify({ phase: dl.phase, percent: dl.percent, savedTo: dl.savedTo, exists, size, error: dl.error }));
           updateOk = updateOk && dl.phase === 'downloaded' && exists && size > 1024 * 1024;
+          // --smoke-update-install：真的执行换包（脚本会等本进程退出后替换 exe 并重启）
+          if (updateOk && process.argv.includes('--smoke-update-install')) {
+            const ins = await updater.install();
+            log('【更新·安装】' + JSON.stringify(ins));
+            updateOk = !!(ins && ins.ok);
+            log('更新通路：' + (updateOk ? 'PASS' : 'FAIL') + '（安装脚本已启动，本进程即将退出）');
+            writeTrace();
+            await new Promise((r) => setTimeout(r, 400));
+            return;   // install() 里已安排退出，不再往下走
+          }
         }
         log('更新通路：' + (updateOk ? 'PASS' : 'FAIL'));
       } else {

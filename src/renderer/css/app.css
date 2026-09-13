@@ -489,6 +489,9 @@ input[type="checkbox"]:checked::after {
 /* ── 软件更新 ───────────────────────────────────────────── */
 .upd-line { font-size: 13px; color: var(--text-1); font-weight: 600; }
 .upd-line.err { color: var(--danger, #e05252); }
+.upd-detail { word-break: break-word; line-height: 1.6; }
+/* 更新说明可能很长（整篇 Release 正文），限高滚动，别把面板撑爆 */
+.upd-notes { max-height: 170px; overflow: auto; word-break: break-word; white-space: pre-wrap; }
 .upd-bar { height: 6px; border-radius: 3px; background: var(--bg-subtle); overflow: hidden; margin: 8px 0; }
 .upd-bar-fill { height: 100%; width: 0; background: var(--accent); border-radius: 3px; transition: width var(--dur-fast); }
 .row-gap { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }

@@ -8,7 +8,8 @@
  *   · 帮助菜单「检查更新…」弹出的更新面板（进度条 / 下载 / 立即重启安装）
  */
 (function () {
-  const { el, toast, fmtBytes } = window.U;
+  const U = window.PLTUtil;
+  const { el, toast, fmtBytes } = U;
   let state = {
     phase: 'idle', mode: 'none', current: '', latest: '', notes: '',
     percent: 0, transferred: 0, total: 0, error: '', releaseUrl: '', assetName: '', savedTo: ''
@@ -98,8 +99,8 @@
   function modal() {
     const body = document.createDocumentFragment();
     const line = el('div', { class: 'upd-line' });
-    const detail = el('div', { class: 'muted small' });
-    const notes = el('div', { class: 'skip-note hidden' });
+    const detail = el('div', { class: 'muted small upd-detail' });
+    const notes = el('div', { class: 'skip-note upd-notes hidden' });
     const bar = progressBar();
 
     const btnCheck = el('button', { class: 'cb-btn', text: '检查更新', onclick: async () => { await check(); } });
@@ -199,6 +200,9 @@
     install,
     modal,
     section,
-    getState: () => state
+    getState: () => state,
+    // 测试接缝：让冒烟测试直接注入一份状态，验证角标/进度条/按钮的渲染
+    // （真实更新链路由 --smoke-update 真连 GitHub 验证，这里只管界面）
+    __inject: (s) => apply(s)
   };
 })();
