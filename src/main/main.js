@@ -1225,6 +1225,19 @@ function runSmokeTest() {
         }
       }
 
+      // 收尾：关掉面板/菜单，还原一个干净界面再截图
+      if (isSmokeUi) {
+        await js(`(() => {
+          document.getElementById('dictPanel').classList.add('hidden');
+          document.getElementById('paneBody').classList.remove('dict-open');
+          document.getElementById('contextMenu').classList.add('hidden');
+          const host = document.getElementById('modalHost');
+          host.classList.add('hidden'); host.innerHTML = '';
+          return true;
+        })()`);
+        await new Promise((r) => setTimeout(r, 400));
+      }
+
       const shot = await mainWindow.webContents.capturePage();
       const out = smokeOut || path.join(store.getDataDir(), 'smoke.png');
       fs.writeFileSync(out, shot.toPNG());
