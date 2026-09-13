@@ -133,7 +133,7 @@ body[data-theme="light"] .stage { background: radial-gradient(120% 100% at 50% 0
 .mini-btn svg { width: 16px; height: 16px; }
 .mini-btn:hover { background: rgba(255, 255, 255, .14); }
 .mini-btn.on { background: var(--accent); color: var(--accent-text); }
-.mini-time { font-size: 11.5px; color: rgba(255, 255, 255, .75); font-variant-numeric: tabular-nums; padding: 0 6px; }
+.mini-time { font-family: var(--font-time); font-size: 12px; color: rgba(255, 255, 255, .75); font-variant-numeric: tabular-nums; padding: 0 6px; }
 
 /* ── 传输控件 ── */
 .transport {
@@ -146,7 +146,7 @@ body[data-theme="light"] .stage { background: radial-gradient(120% 100% at 50% 0
   gap: 4px;
 }
 .seek-row { display: flex; align-items: center; gap: 10px; }
-.time { font-size: 11.5px; color: var(--text-3); font-variant-numeric: tabular-nums; min-width: 42px; text-align: center; }
+.time { font-family: var(--font-time); font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; min-width: 42px; text-align: center; }
 
 .seekbar { flex: 1; padding: 6px 0; cursor: pointer; }
 .seek-track { position: relative; height: 5px; border-radius: 3px; background: var(--stroke-2); }

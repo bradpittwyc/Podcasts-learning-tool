@@ -8,6 +8,8 @@
   --font-cn: "Microsoft YaHei UI", "Microsoft YaHei", "微软雅黑", sans-serif;
   --font-en: "Times New Roman", Times, Georgia, "Nimbus Roman", serif;
   --font-mono: "Cascadia Code", "Consolas", "SFMono-Regular", monospace;
+  /* 时间显示（字幕时间戳、播放器进度时间）：与英文正文一致的 Times New Roman */
+  --font-time: "Times New Roman", Times, Georgia, "Nimbus Roman", serif;
 
   /* 圆角 */
   --radius-xs: 3px;

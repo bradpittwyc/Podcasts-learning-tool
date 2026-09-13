@@ -77,14 +77,17 @@
 .cue.dim:hover { opacity: 1; }
 
 .cue-time {
-  font-family: var(--font-mono);
-  font-size: 10.5px;
+  font-family: var(--font-time);
+  font-size: 11px;
   line-height: 1.5;
   color: var(--text-3);
   /* 与英文第一行对齐：line-height 固定为 28px（与 .cue-en 一致），
      再用 padding-top 把小型字体的基线压到同一水平线上。
      times 在 17.5px/28px 下的半行距约 5.25px，圆整后取 7px 视觉最齐。 */
-  padding-top: 7px;
+  padding-top: 8px;
+  /* 与英文第一行基线对齐：英文 17.5px/28px 基线在行顶下方约 20.8px，
+     Times 11px/16.5px 基线在行顶下方约 12.5px，差值取 8px。
+     时间戳自身也用 Times New Roman，两边同字体，基线才真正咬合。 */
   text-align: right;
   font-variant-numeric: tabular-nums;
   user-select: none;
