@@ -69,6 +69,28 @@ function updaterMode() {
   return 'installer';
 }
 
+/** 测试用：把「已是最新」也当成「有新版本」，用来在本地完整演练换包流程 */
+function forceUpdate() {
+  return process.argv.includes('--smoke-update-force');
+}
+
+/**
+ * 便携版更新目录的清理：上一次更新可能留下没来得及换的 exe 或半截 .part。
+ * 只有「用户主动点了下载」才会往里写文件，所以启动时清掉的一定是陈货。
+ */
+function cleanupUpdateDir() {
+  const dir = updateDir();
+  let removed = 0;
+  try {
+    for (const name of fs.readdirSync(dir)) {
+      if (name === 'update.log') continue;
+      if (!/\.(exe|part|tmp)$/i.test(name)) continue;
+      try { fs.unlinkSync(path.join(dir, name)); removed++; } catch (_) { /* 正在被占用就留着 */ }
+    }
+  } catch (_) { /* ignore */ }
+  return removed;
+}
+
 /** 语义化版本比较：a>b 返回 1，a<b 返回 -1，相等 0（忽略 v 前缀与预发布号） */
 function compareVersion(a, b) {
   const norm = (v) => String(v || '').trim().replace(/^v/i, '').split('-')[0].split('.').map((n) => parseInt(n, 10) || 0);
@@ -271,7 +293,7 @@ async function check({ silent, force } = {}) {
     if (mode === 'portable') {
       const info = await portableLatest();
       const cmp = compareVersion(info.version, app.getVersion());
-      if (cmp > 0) {
+      if (cmp > 0 || (forceUpdate() && cmp === 0)) {
         emit({
           phase: 'available',
           latest: info.version,
@@ -386,6 +408,7 @@ function init(opts = {}) {
   state.current = app.getVersion();
   state.mode = updaterMode();
   state.releaseUrl = RELEASE_PAGE;
+  if (state.mode === 'portable') cleanupUpdateDir();
   return getState();
 }
 
@@ -400,6 +423,7 @@ module.exports = {
   updaterMode,
   compareVersion,
   writeSwapScript,
+  cleanupUpdateDir,
   REPO,
   RELEASE_PAGE
 };
