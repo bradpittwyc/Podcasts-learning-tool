@@ -54,6 +54,10 @@
       {
         "from": "scripts/ocr.ps1",
         "to": "ocr.ps1"
+      },
+      {
+        "from": "scripts/ui-probe.js",
+        "to": "ui-probe.js"
       }
     ],
     "win": {

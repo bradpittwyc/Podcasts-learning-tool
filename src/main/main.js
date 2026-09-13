@@ -897,7 +897,8 @@ function scanFolder(dir, opts = {}) {
       if (!e.isFile()) continue;
       const ext = path.extname(e.name).toLowerCase();
       if (subs.MEDIA_EXT.includes(ext)) bucket.media.push(e.name);
-      else if (subs.SUBTITLE_EXT.includes(ext)) bucket.subs.push(e.name);
+      // .txt 无时间轴（导入需额外输入时长），不参与自动配对和快速选择
+      else if (subs.SUBTITLE_EXT.includes(ext) && ext !== '.txt') bucket.subs.push(e.name);
     }
     if (bucket.media.length || bucket.subs.length) byDir.set(current, { ...bucket, relative });
     for (const name of subdirs) {
@@ -1114,7 +1115,12 @@ function runSmokeTest() {
       let uiOk = true;
       if (isSmokeUi) {
         try {
-          const probeMod = require(path.join(__dirname, '..', '..', 'scripts', 'ui-probe.js'));
+          const probePath = [
+            path.join(process.resourcesPath || '', 'ui-probe.js'),        // 打包后
+            path.join(__dirname, '..', '..', 'scripts', 'ui-probe.js')    // 源码运行
+          ].find((p) => { try { return p && fs.existsSync(p); } catch (_) { return false; } });
+          if (!probePath) throw new Error('找不到 ui-probe.js');
+          const probeMod = require(probePath);
           const p = probeMod.install({ js, log, wait: (ms) => new Promise((r) => setTimeout(r, ms)) });
           const res = await p.probe();
           log('UI 探测结果：' + JSON.stringify(res, null, 1));
