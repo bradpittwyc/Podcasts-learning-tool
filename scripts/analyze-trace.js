@@ -42,6 +42,11 @@ if (i > 0) {
         if (!r) return false;
         return r.panelVisible === true && r.cursor === 'pointer' && r.apiCallsDelta >= 1;
       })()],
+      ['6c 低级别词不显示「低于取词级别」提示条', (() => {
+        const r = obj['6b 低级别常用词仍可查'];
+        if (!r) return false;
+        return r.belowLevelNote === 0 && !/低于当前取词级别/.test(r.body || '');
+      })()],
       ['2b 进度条拖动到 50%', obj['2b 拖动到 50%'] && obj['2b 拖动到 50%'].tUp > 20],
       ['3a 点字幕跳转（不回到开头）', obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'] && obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'].after > 30],
       ['4a 字幕菜单可用', obj['4a 字幕按钮与菜单'] && obj['4a 字幕按钮与菜单'].menuVisible],

@@ -493,6 +493,8 @@ function install(ctx) {
         phonetic: document.getElementById('dictPhonetic').textContent,
         tags: [...document.querySelectorAll('#dictTags .tag')].map((t) => t.textContent),
         body: document.getElementById('dictBody').textContent.replace(/\\s+/g, ' ').slice(0, 240),
+        // 规格：低于级别的词照查不误，但**不再**显示「该词低于当前取词级别…」的提示条
+        belowLevelNote: document.querySelectorAll('#dictBody .skip-note').length,
         apiCallsDelta: after.calls - before.calls,
         tokensDelta: after.totalTokens - before.totalTokens,
         errNote: document.querySelector('#dictBody .dict-error') ? document.getElementById('dictBody').textContent.slice(0, 160) : null

@@ -276,9 +276,6 @@
         }
         this.body.appendChild(el('div', { class: 'dict-sec' }, [el('h4', { text: '原文语境' }), span]));
       }
-      if (entry.belowLevel) {
-        this.body.appendChild(el('div', { class: 'skip-note', text: `该词低于当前取词级别（${entry.cefr || ''}），扫描时不会标记为「难词」；释义仍由大模型结合语境生成。` }));
-      }
       U.$('#dictSave').textContent = '＋ 生词本';
     }
 
