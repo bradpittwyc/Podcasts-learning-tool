@@ -40,6 +40,9 @@ desktop.ini
 .env
 .env.*
 
+# 出厂预置的 API Key（本地构建内嵌，绝不入库）
+src/main/default-key.js
+
 # 生成的离线词典（npm run dict 可重建，数据源 ECDICT）
 resources/local-dict.json
 resources/local-dict.json.gz

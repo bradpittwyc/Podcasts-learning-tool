@@ -21,6 +21,7 @@ const DEFAULT_SETTINGS = {
     model: 'deepseek-flash',
     apiKeyEnc: '',          // safeStorage 加密后的 base64
     apiKeyPlain: '',        // 无法加密时的降级存储（有提示）
+    useBundled: true,       // 没有自己的 Key 时，是否使用本地构建内嵌的出厂 Key
     temperature: 0.2,
     maxTokens: 8192,
     timeoutMs: 45000,
@@ -121,6 +122,28 @@ class Store {
         const raw = fs.readFileSync(this.path, 'utf8');
         const parsed = JSON.parse(raw.replace(/^\uFEFF/, ''));
         this.data = deepMerge(JSON.parse(JSON.stringify(this.defaults)), parsed);
+      } else if (isPortable() && this.fileName === 'settings.json') {
+        // 便携版首次运行：把安装版（漫游目录）里能真正解密的设置继承过来，
+        // 免得用户为了「绿色版」再配一遍。
+        // 注意：safeStorage 的密文可能绑定可执行文件身份，换 exe 也许解不开 ——
+        // 所以先试解密，解不开就整段丢弃，绝不把一段废密文写进便携目录。
+        const roaming = path.join(app.getPath('appData'), 'Podcasts Learning Tool', 'settings.json');
+        if (fs.existsSync(roaming)) {
+          const parsed = JSON.parse(fs.readFileSync(roaming, 'utf8').replace(/^\uFEFF/, ''));
+          const enc = parsed && parsed.llm && parsed.llm.apiKeyEnc;
+          let usable = true;
+          if (enc) {
+            try { usable = !!safeStorage.decryptString(Buffer.from(enc, 'base64')); }
+            catch (_) { usable = false; }
+            if (!usable) {
+              parsed.llm.apiKeyEnc = '';
+              parsed.llm.apiKeyPlain = '';
+            }
+          }
+          this.data = deepMerge(JSON.parse(JSON.stringify(this.defaults)), parsed);
+          this.save();
+          console.log('[store] 便携版首次运行：已继承安装版设置（Key ' + (enc ? (usable ? '可用' : '不可用，已忽略') : '未设置') + '）');
+        }
       }
     } catch (err) {
       console.error('[store] 读取失败，使用默认值：', this.path, err.message);
@@ -234,35 +257,76 @@ function history() {
 }
 
 // ── API Key 安全存储 ─────────────────────────────────────────
+/**
+ * 出厂预置 Key：本地构建时随 src/ 一起打进 asar（该文件被 .gitignore 排除，
+ * 公开仓库 / CI 构建里不存在，此时返回空串，走「用户自己填」的正常流程）。
+ */
+function bundledKey() {
+  try {
+    const m = require('./default-key');
+    return String((m && m.key) || '').trim();
+  } catch (_) {
+    return '';
+  }
+}
+
 function setApiKey(plain) {
   const s = settings();
   if (!plain) {
     s.set('llm.apiKeyEnc', '');
     s.set('llm.apiKeyPlain', '');
+    s.set('llm.useBundled', false);   // 用户明确清空 → 连内置 Key 也不用
     return { ok: true, encrypted: false };
   }
   if (safeStorage.isEncryptionAvailable()) {
     s.set('llm.apiKeyEnc', safeStorage.encryptString(plain).toString('base64'));
     s.set('llm.apiKeyPlain', '');
+    s.set('llm.useBundled', true);
     return { ok: true, encrypted: true };
   }
   s.set('llm.apiKeyPlain', plain);
   s.set('llm.apiKeyEnc', '');
+  s.set('llm.useBundled', true);
   return { ok: true, encrypted: false };
 }
 
+/**
+ * 取 Key 的顺序：
+ *   1. 用户自己填的（safeStorage 密文）—— 但换过 exe / 换过机器可能解不开；
+ *   2. 明文降级位（系统不支持加密时才会用到）；
+ *   3. 构建内嵌的出厂 Key（useBundled 时）。
+ * 第 1 步解不开时**不再直接返回空**（那会让界面显示「未配置 Key」却查不了词），
+ * 而是继续往下兜底 —— 密文失效也能自愈。
+ */
 function getApiKey() {
   const s = settings();
   const enc = s.get('llm.apiKeyEnc', '');
   if (enc) {
     try {
-      return safeStorage.decryptString(Buffer.from(enc, 'base64'));
+      const k = safeStorage.decryptString(Buffer.from(enc, 'base64'));
+      if (k) return k;
     } catch (err) {
-      console.error('[store] API Key 解密失败：', err.message);
-      return '';
+      console.warn('[store] API Key 解密失败，改用兜底 Key：', err.message);
     }
   }
-  return s.get('llm.apiKeyPlain', '') || '';
+  const plain = s.get('llm.apiKeyPlain', '');
+  if (plain) return plain;
+  if (s.get('llm.useBundled', true) !== false) return bundledKey();
+  return '';
+}
+
+/** 当前 Key 的来源，用于界面提示与冒烟诊断 */
+function apiKeySource() {
+  const s = settings();
+  const enc = s.get('llm.apiKeyEnc', '');
+  if (enc) {
+    try {
+      if (safeStorage.decryptString(Buffer.from(enc, 'base64'))) return 'stored';
+    } catch (_) { /* 落到下面兜底 */ }
+  }
+  if (s.get('llm.apiKeyPlain', '')) return 'plain';
+  if (s.get('llm.useBundled', true) !== false && bundledKey()) return 'bundled';
+  return 'none';
 }
 
 function hasApiKey() {
@@ -280,6 +344,8 @@ function debugKey() {
     encryptionAvailable: safeStorage.isEncryptionAvailable(),
     apiKeyEncLen: enc ? enc.length : 0,
     apiKeyPlain: !!plain,
+    bundledAvailable: !!bundledKey(),
+    source: apiKeySource(),
     decryptOk: false,
     decryptError: null,
     keyLen: 0
@@ -304,6 +370,7 @@ function publicSettings() {
   const key = getApiKey();
   data.llm.hasApiKey = !!key;
   data.llm.apiKeyHint = key ? key.slice(0, 4) + '••••••••' + key.slice(-4) : '';
+  data.llm.apiKeySource = apiKeySource();   // stored | plain | bundled | none
   delete data.llm.apiKeyEnc;
   delete data.llm.apiKeyPlain;
   data.meta = {
@@ -324,6 +391,7 @@ module.exports = {
   setApiKey,
   getApiKey,
   hasApiKey,
+  apiKeySource,
   debugKey,
   publicSettings,
   isPortable,

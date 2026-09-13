@@ -628,6 +628,12 @@ async function lookupTiered(requests, options = {}) {
   if (needLlm.length) {
     const t0 = Date.now();
     try {
+      // 没配 Key 时直接给出明确错误，不要伪装成「查不到」
+      if (!getApiKey() && !/localhost|127\.0\.0\.1|0\.0\.0\.0/i.test(String(s.get('llm.baseURL', '')))) {
+        const e = new Error('NO_API_KEY');
+        e.code = 'NO_API_KEY';
+        throw e;
+      }
       const aiRes = await lookupBatch(needLlm, {
         level: levelId,
         applyLevelFilter: false,     // 分级过滤已由本地词典完成
@@ -666,8 +672,7 @@ async function lookupTiered(requests, options = {}) {
       result.aiError = { code: err.code || 'ERROR', message: err.message };
       result.ok = true;
       result.partial = true;
-    }
-  }
+    }  }
 
   // 统计：本地单独解决的词数（0 费用）
   result.stats.localOnly = Object.values(result.entries).filter((e) => e && e.source === 'local').length;

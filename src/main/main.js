@@ -762,6 +762,10 @@ function registerIpc() {
       const tier = await llm.lookupTiered([{ word, context }], { level: levelId, skipLocal: true, force: true });
       const key = String(word).toLowerCase();
       const entry = tier.entries[key] || null;
+      // AI 失败时把真实原因上报（未配置 Key / 401 / 超时…），不要伪装成「查不到」
+      if (!entry && tier.aiError) {
+        return { ok: false, code: tier.aiError.code, error: tier.aiError.message, toApi: tier.stats.aiCalls };
+      }
       return {
         ok: true,
         entry: entry && entry.noContent ? null : entry,

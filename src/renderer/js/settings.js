@@ -157,7 +157,14 @@
       row.appendChild(this.field('模型 Model', this.input('llm.model', { placeholder: 'deepseek-chat' })));
       form.appendChild(row);
 
-      const keyInput = el('input', { type: 'password', placeholder: s.llm.hasApiKey ? `已保存：${s.llm.apiKeyHint}（留空则不修改）` : 'sk-...' });
+      const keyInput = el('input', {
+        type: 'password',
+        placeholder: !s.llm.hasApiKey
+          ? 'sk-...'
+          : (s.llm.apiKeySource === 'bundled'
+            ? `正在使用内置 Key：${s.llm.apiKeyHint}（填入自己的 Key 可覆盖）`
+            : `已保存：${s.llm.apiKeyHint}（留空则不修改）`)
+      });
       const keyRow = el('div', { style: { display: 'flex', gap: '8px' } }, [
         keyInput,
         el('button', {
@@ -173,7 +180,11 @@
         }),
         el('button', {
           class: 'cb-btn', text: '清除',
-          onclick: async () => { await window.PLT.settings.setApiKey(''); await this.open('llm'); toast('已清除 API Key'); }
+          onclick: async () => {
+            await window.PLT.settings.setApiKey('');
+            await this.open('llm');
+            toast('已清除 API Key（不再使用内置 Key，查词将不可用）', 'warn');
+          }
         })
       ]);
       form.appendChild(this.field('API Key', keyRow, s.meta.encrypted
