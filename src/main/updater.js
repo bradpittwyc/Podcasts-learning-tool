@@ -293,7 +293,9 @@ async function check({ silent, force } = {}) {
     if (mode === 'portable') {
       const info = await portableLatest();
       const cmp = compareVersion(info.version, app.getVersion());
-      if (cmp > 0 || (forceUpdate() && cmp === 0)) {
+      // forceUpdate() 是本地演练开关：即使已经是最新（甚至比线上还新）也当成可升级，
+      // 用来在不上线新版本的情况下，完整跑一遍「下载 → 换包 → 重启」
+      if (cmp > 0 || (forceUpdate() && info.assetUrl)) {
         emit({
           phase: 'available',
           latest: info.version,
@@ -361,14 +363,28 @@ function installPortable() {
   if (!newExe || !fs.existsSync(newExe)) return { ok: false, error: '更新包还没下载完' };
   const ps1 = writeSwapScript(newExe, target, process.pid);
   const { spawn } = require('child_process');
+  let started = false;
+  let err = '';
+  // 必须经 `cmd /c start` 派生子进程：直接 detached spawn 出来的进程会在
+  // 本进程退出时被一并带走（实测如此），换包脚本就没机会执行。
   try {
-    const child = spawn('powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1],
+    const child = spawn('cmd.exe',
+      ['/c', 'start', '', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+        '-WindowStyle', 'Hidden', '-File', `"${ps1}"`],
       { detached: true, stdio: 'ignore', windowsHide: true });
     child.unref();
-  } catch (err) {
-    return { ok: false, error: '无法启动替换脚本：' + err.message };
+    started = true;
+  } catch (e) { err = e.message; }
+  if (!started) {
+    try {
+      const child = spawn('powershell.exe',
+        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1],
+        { detached: true, stdio: 'ignore', windowsHide: true });
+      child.unref();
+      started = true;
+    } catch (e) { err = err || e.message; }
   }
+  if (!started) return { ok: false, error: '无法启动替换脚本：' + err };
   emit({ phase: 'installing', percent: 100 });
   setTimeout(() => app.quit(), 800);
   return { ok: true, target, ps1 };
