@@ -356,43 +356,76 @@ async function download() {
   return getState();
 }
 
+/**
+ * 便携版换包脚本的「启动确认」。
+ *
+ * 踩过的坑：直接 detached spawn 出来的子进程，可能在父进程退出的瞬间被一起带走，
+ * 脚本连第一行都没执行（update.log 都不存在）。所以这里必须：
+ *   1. 用 cmd /c start 派生（真正脱离进程树）；
+ *   2. 等脚本把第一行日志写出来再退出 —— 脚本第一件事就是写 update.log，
+ *      日志出现即证明它活着，之后即使我们退出它也会继续把包换完。
+ */
+function waitForScriptReady(logFile, timeoutMs = 9000) {
+  const started = Date.now();
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (fs.existsSync(logFile)) return resolve(true);
+      if (Date.now() - started > timeoutMs) return resolve(false);
+      setTimeout(tick, 250);
+    };
+    tick();
+  });
+}
+
 /** 便携版：生成换包脚本并退出，由脚本完成替换 + 重启 */
-function installPortable() {
+async function installPortable() {
   const target = currentExePath();
   const newExe = state.savedTo;
   if (!newExe || !fs.existsSync(newExe)) return { ok: false, error: '更新包还没下载完' };
-  const ps1 = writeSwapScript(newExe, target, process.pid);
+  const dir = path.dirname(newExe);
+  const logFile = path.join(dir, 'update.log');
+  try { fs.unlinkSync(logFile); } catch (_) { /* 旧日志留着也无妨 */ }
+  const ps1 = writeSwapScript(newExe, target, process.pid, dir);
+
   const { spawn } = require('child_process');
-  let started = false;
-  let err = '';
-  // 必须经 `cmd /c start` 派生子进程：直接 detached spawn 出来的进程会在
-  // 本进程退出时被一并带走（实测如此），换包脚本就没机会执行。
-  try {
-    const child = spawn('cmd.exe',
-      ['/c', 'start', '', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-        '-WindowStyle', 'Hidden', '-File', `"${ps1}"`],
-      { detached: true, stdio: 'ignore', windowsHide: true });
-    child.unref();
-    started = true;
-  } catch (e) { err = e.message; }
-  if (!started) {
+  const trySpawn = (cmd, args) => new Promise((resolve) => {
+    let settled = false;
+    let child;
     try {
-      const child = spawn('powershell.exe',
-        ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1],
-        { detached: true, stdio: 'ignore', windowsHide: true });
-      child.unref();
-      started = true;
-    } catch (e) { err = err || e.message; }
+      child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true });
+    } catch (err) { return resolve({ ok: false, error: err.message }); }
+    child.on('error', (err) => { if (!settled) { settled = true; resolve({ ok: false, error: err.message }); } });
+    child.on('spawn', () => { if (!settled) { settled = true; resolve({ ok: true, pid: child.pid }); } });
+    setTimeout(() => { if (!settled) { settled = true; resolve({ ok: true, pid: child.pid }); } }, 1500);
+    if (child.unref) child.unref();
+  });
+
+  emit({ phase: 'installing', percent: 100, error: '' });
+  // 首选：cmd /c start（新进程组，父进程退出不受影响）
+  let res = await trySpawn('cmd.exe',
+    ['/c', 'start', '', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
+      '-WindowStyle', 'Hidden', '-File', `"${ps1}"`]);
+  if (!res.ok) {
+    res = await trySpawn('powershell.exe',
+      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1]);
   }
-  if (!started) return { ok: false, error: '无法启动替换脚本：' + err };
-  emit({ phase: 'installing', percent: 100 });
-  setTimeout(() => app.quit(), 800);
-  return { ok: true, target, ps1 };
+  if (!res.ok) {
+    emit({ phase: 'downloaded', error: '无法启动替换脚本：' + res.error });
+    return { ok: false, error: '无法启动替换脚本：' + res.error };
+  }
+
+  const ready = await waitForScriptReady(logFile);
+  if (!ready) {
+    emit({ phase: 'downloaded', error: '替换脚本没能启动，请手动用新版本覆盖当前 exe' });
+    return { ok: false, error: '替换脚本没能启动（' + (state.savedTo || '') + '）' };
+  }
+  setTimeout(() => app.quit(), 500);
+  return { ok: true, target, ps1, logFile };
 }
 
 async function install() {
   const mode = updaterMode();
-  if (mode === 'portable') return installPortable();
+  if (mode === 'portable') return await installPortable();
   if (mode === 'installer') {
     emit({ phase: 'installing' });
     // 静默安装：assisted（oneClick:false）安装包的 NSIS 脚本会从注册表读回

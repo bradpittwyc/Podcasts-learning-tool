@@ -1,7 +1,7 @@
 {
   "name": "podcasts-learning-tool",
   "productName": "Podcasts Learning Tool",
-  "version": "1.0.6",
+  "version": "1.0.7",
   "description": "英语学习神器 — 播放 MP4/MP3 与播客/视频字幕跟读，点击文字跳转时间戳，大模型分级取词查词典（雅思/托福/GRE/母语级）。",
   "main": "src/main/main.js",
   "author": {
