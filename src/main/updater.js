@@ -464,6 +464,23 @@ function waitForScriptReady(logFile, timeoutMs = 9000) {
   });
 }
 
+/** 派生一个脱离进程树的子进程；resolve 时确认它真的起来了 */
+function spawnDetached(cmd, args) {
+  const { spawn } = require('child_process');
+  return new Promise((resolve) => {
+    let settled = false;
+    const done = (r) => { if (!settled) { settled = true; resolve(r); } };
+    let child;
+    try {
+      child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true });
+    } catch (err) { return done({ ok: false, error: err.message }); }
+    child.on('error', (err) => done({ ok: false, error: err.message }));
+    child.on('spawn', () => done({ ok: true, pid: child.pid }));
+    setTimeout(() => done({ ok: true, pid: child.pid }), 1500);
+    if (child.unref) child.unref();
+  });
+}
+
 /** 便携版：生成换包脚本并退出，由脚本完成替换 + 重启 */
 async function installPortable() {
   const target = currentExePath();
@@ -474,40 +491,31 @@ async function installPortable() {
   try { fs.unlinkSync(logFile); } catch (_) { /* 旧日志留着也无妨 */ }
   const ps1 = writeSwapScript(newExe, target, process.pid, dir);
 
-  const { spawn } = require('child_process');
-  const trySpawn = (cmd, args) => new Promise((resolve) => {
-    let settled = false;
-    let child;
-    try {
-      child = spawn(cmd, args, { detached: true, stdio: 'ignore', windowsHide: true });
-    } catch (err) { return resolve({ ok: false, error: err.message }); }
-    child.on('error', (err) => { if (!settled) { settled = true; resolve({ ok: false, error: err.message }); } });
-    child.on('spawn', () => { if (!settled) { settled = true; resolve({ ok: true, pid: child.pid }); } });
-    setTimeout(() => { if (!settled) { settled = true; resolve({ ok: true, pid: child.pid }); } }, 1500);
-    if (child.unref) child.unref();
-  });
-
   emit({ phase: 'installing', percent: 100, error: '' });
-  // 首选：cmd /c start（新进程组，父进程退出不受影响）
-  let res = await trySpawn('cmd.exe',
-    ['/c', 'start', '', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass',
-      '-WindowStyle', 'Hidden', '-File', `"${ps1}"`]);
-  if (!res.ok) {
-    res = await trySpawn('powershell.exe',
-      ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1]);
-  }
-  if (!res.ok) {
-    emit({ phase: 'downloaded', error: '无法启动替换脚本：' + res.error });
-    return { ok: false, error: '无法启动替换脚本：' + res.error };
-  }
 
-  const ready = await waitForScriptReady(logFile);
-  if (!ready) {
-    emit({ phase: 'downloaded', error: '替换脚本没能启动，请手动用新版本覆盖当前 exe' });
-    return { ok: false, error: '替换脚本没能启动（' + (state.savedTo || '') + '）' };
+  // 三种派生方式依次试，谁先把日志写出来就用谁。
+  // 注意：传给 spawn 的参数不要再自己加引号 —— Node 会自动为含空格的参数加引号，
+  // 手工再加一层会被转义成 \" ，cmd /c start 就会拿到一个坏路径。
+  const attempts = [
+    ['cmd /c start + powershell',
+      () => spawnDetached('cmd.exe', ['/c', 'start', '', 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1])],
+    ['cmd /c start（工作目录取数据目录）',
+      () => spawnDetached('cmd.exe', ['/c', 'start', '', '/D', dir, 'powershell.exe', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1])],
+    ['直接 detached powershell',
+      () => spawnDetached('powershell.exe', ['-NoProfile', '-ExecutionPolicy', 'Bypass', '-WindowStyle', 'Hidden', '-File', ps1])]
+  ];
+  const tried = [];
+  for (const [label, run] of attempts) {
+    const res = run();
+    if (!res.ok) { tried.push(label + ': ' + res.error); continue; }
+    if (await waitForScriptReady(logFile, 4000)) {
+      setTimeout(() => app.quit(), 500);
+      return { ok: true, target, ps1, logFile, strategy: label };
+    }
+    tried.push(label + ': 脚本未启动');
   }
-  setTimeout(() => app.quit(), 500);
-  return { ok: true, target, ps1, logFile };
+  emit({ phase: 'downloaded', error: '替换脚本没能启动，可手动用下面这个文件覆盖当前 exe：' + newExe });
+  return { ok: false, error: '替换脚本没能启动（' + tried.join('；') + '）', newExe };
 }
 
 async function install() {
