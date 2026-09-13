@@ -25,7 +25,8 @@ const { app, shell, dialog } = require('electron');
 const store = require('./store');
 
 const REPO = { owner: 'bradpittwyc', repo: 'Podcasts-learning-tool' };
-const RELEASE_PAGE = `https://github.com/${REPO.owner}/${REPO.repo}/releases/latest`;
+const REPO_URL = `https://github.com/${REPO.owner}/${REPO.repo}`;
+const RELEASE_PAGE = `${REPO_URL}/releases/latest`;
 const PORTABLE_ASSET_RE = /Portable.*\.exe$/i;
 
 let send = () => {};
@@ -102,8 +103,32 @@ function compareVersion(a, b) {
   return 0;
 }
 
-function fetchJSON(url, redirects = 0) {
+/** 抓一小段文本（用于 latest.yml，几百字节） */
+function fetchText(url, redirects = 0) {
   return new Promise((resolve, reject) => {
+    if (redirects > 5) return reject(new Error('重定向过多'));
+    const req = https.get(url, {
+      headers: { 'User-Agent': 'Podcasts-Learning-Tool-Updater', Accept: 'text/plain,*/*' },
+      timeout: 20000
+    }, (res) => {
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        res.resume();
+        return resolve(fetchText(res.headers.location, redirects + 1));
+      }
+      if (res.statusCode === 404) { res.resume(); return reject(new Error('还没有发布更新清单')); }
+      if (res.statusCode === 403) { res.resume(); return reject(new Error('GitHub 接口限流（403）')); }
+      if (res.statusCode !== 200) { res.resume(); return reject(new Error('GitHub 返回 ' + res.statusCode)); }
+      let body = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { body += c; });
+      res.on('end', () => resolve(body));
+    });
+    req.on('timeout', () => req.destroy(new Error('连接 GitHub 超时')));
+    req.on('error', reject);
+  });
+}
+
+function fetchJSON(url, redirects = 0) {  return new Promise((resolve, reject) => {
     if (redirects > 5) return reject(new Error('重定向过多'));
     const req = https.get(url, {
       headers: {
@@ -128,8 +153,7 @@ function fetchJSON(url, redirects = 0) {
   });
 }
 
-function downloadFile(url, dest, onProgress, redirects = 0) {
-  return new Promise((resolve, reject) => {
+function downloadFile(url, dest, onProgress, redirects = 0) {  return new Promise((resolve, reject) => {
     if (redirects > 5) return reject(new Error('重定向过多'));
     const req = https.get(url, {
       headers: { 'User-Agent': 'Podcasts-Learning-Tool-Updater', Accept: 'application/octet-stream' },
@@ -201,8 +225,9 @@ function initAutoUpdater() {
 
 function friendlyError(msg) {
   const m = String(msg || '');
+  if (/403/.test(m)) return 'GitHub 接口限流了（同一网络共用额度），稍后再试，或用「打开发布页」手动下载';
   if (/net::|ENOTFOUND|ETIMEDOUT|EAI_AGAIN|连接 GitHub 超时/i.test(m)) return '网络不通，未能连接 GitHub（可稍后重试）';
-  if (/404|latest\.yml|Cannot find/i.test(m)) return '这个 Release 还没有更新清单（latest.yml）';
+  if (/404|latest\.yml|Cannot find|还没有发布更新清单/i.test(m)) return '这个 Release 还没有更新清单（latest.yml）';
   if (/sha512|checksum/i.test(m)) return '安装包校验不通过，已中止（可能是上传不完整）';
   return m || '未知错误';
 }
@@ -210,7 +235,68 @@ function friendlyError(msg) {
 // ─────────────────────────────────────────────────────────────
 // 便携版：查 Release → 下载 → 换包
 // ─────────────────────────────────────────────────────────────
+/**
+ * 便携版的「查最新版本」优先走 Release 资产，而不是 GitHub API：
+ *   · https://github.com/<owner>/<repo>/releases/latest/download/latest.yml
+ *     —— 这是 GitHub 的固定跳转地址，永远指向最新正式版，**不消耗 API 额度**；
+ *   · 拿到 version 后按命名约定拼出便携版资产名。
+ * 为什么要这样：未登录的 GitHub API 每小时只有 60 次（同一出口 IP 共用），
+ * 公司/学校网络下很容易 403；而走资产下载地址则没有这个限制。
+ * API 只作为兜底（万一资产命名不符约定）。
+ */
+function releaseAssetUrl(name) {
+  return `https://github.com/${REPO.owner}/${REPO.repo}/releases/latest/download/${encodeURIComponent(name)}`;
+}
+
+function headRequest(url, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    if (redirects > 5) return reject(new Error('重定向过多'));
+    const req = https.request(url, { method: 'HEAD', headers: { 'User-Agent': 'Podcasts-Learning-Tool-Updater' }, timeout: 15000 }, (res) => {
+      res.resume();
+      if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        return resolve(headRequest(res.headers.location, redirects + 1));
+      }
+      resolve({ status: res.statusCode, size: parseInt(res.headers['content-length'] || '0', 10) });
+    });
+    req.on('timeout', () => req.destroy(new Error('连接 GitHub 超时')));
+    req.on('error', reject);
+    req.end();
+  });
+}
+
 async function portableLatest() {
+  const errors = [];
+  // ── 首选：latest.yml（无 API 额度消耗） ──
+  try {
+    const yml = await fetchText(releaseAssetUrl('latest.yml'));
+    const version = (yml.match(/^version:\s*(.+)$/m) || [])[1];
+    if (version) {
+      const v = version.trim().replace(/^v/i, '');
+      const candidates = [
+        `Podcasts-Learning-Tool-Portable-${v}.exe`,
+        `Podcasts-Learning-Tool-Portable.exe`
+      ];
+      for (const name of candidates) {
+        try {
+          const head = await headRequest(releaseAssetUrl(name));
+          if (head.status === 200 || head.status === 302) {
+            return {
+              version: v,
+              tag: `v${v}`,
+              notes: '',
+              url: `${REPO_URL}/releases/tag/v${v}`,
+              assetName: name,
+              assetUrl: releaseAssetUrl(name),
+              assetSize: head.size,
+              via: 'latest.yml'
+            };
+          }
+        } catch (e) { errors.push(name + ': ' + e.message); }
+      }
+    }
+  } catch (e) { errors.push('latest.yml: ' + e.message); }
+
+  // ── 兜底：GitHub API（可能被限流） ──
   const rel = await fetchJSON(`https://api.github.com/repos/${REPO.owner}/${REPO.repo}/releases/latest`);
   const tag = String(rel.tag_name || rel.name || '').trim();
   const version = tag.replace(/^v/i, '');
@@ -225,7 +311,8 @@ async function portableLatest() {
     assetName: asset ? asset.name : '',
     assetUrl: asset ? asset.browser_download_url : '',
     assetSize: asset ? asset.size : 0,
-    publishedAt: rel.published_at || ''
+    publishedAt: rel.published_at || '',
+    via: 'api'
   };
 }
 
