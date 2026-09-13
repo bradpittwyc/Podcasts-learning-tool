@@ -10,6 +10,27 @@
 
   const RATES = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 1.75, 2, 2.5];
 
+  /** 没有媒体时不按：播放 / 上一句 / 下一句 / 重播 / 循环 / A-B / 步进 / 静音 / 画中画 / 全屏 */
+  const PLAYBACK_CONTROLS = ['btnPlay', 'btnPrevLine', 'btnNextLine', 'btnReplay', 'btnLoopLine',
+    'trPlay', 'trPrev', 'trNext', 'trBack5', 'trFwd5', 'trLoop', 'trAB', 'trMute', 'trPip', 'trFull',
+    'miniPlay', 'miniFull', 'btnShadow', 'miniShadow'];
+
+  /** 单例引用，供外部（诊断 / 应用层）查询与刷新控件状态 */
+  let activePlayer = null;
+
+  /** 没有媒体时禁用播放类控件（并给出原因提示） */
+  function paintPlaybackEnabled(hasMedia) {
+    for (const id of PLAYBACK_CONTROLS) {
+      const node = document.getElementById(id);
+      if (!node) continue;
+      if (!node.dataset.baseTitle) node.dataset.baseTitle = node.getAttribute('title') || '';
+      node.disabled = !hasMedia;
+      node.setAttribute('title', hasMedia
+        ? node.dataset.baseTitle
+        : '请先打开视频或音频文件');
+    }
+  }
+
   class Player {
     constructor(video, opts) {
       this.media = video;
@@ -21,6 +42,8 @@
       this._lastEmit = 0;
       this._rafId = null;
       this._seeking = false;
+      activePlayer = this;
+      paintPlaybackEnabled(!!(video.currentSrc || video.src));
       this.bindMedia();
     }
 
@@ -37,15 +60,23 @@
 
     bindMedia() {
       const m = this.media;
-      const emitState = () => this.emit('state', {
-        playing: !m.paused && !m.ended,
-        ready: m.readyState >= 2,
-        ended: m.ended,
-        rate: m.playbackRate,
-        volume: m.volume,
-        muted: m.muted,
-        duration: Number.isFinite(m.duration) ? m.duration : 0
-      });
+      const emitState = () => {
+        // hasMedia 以「已装载的媒体」为准，而不是 URL ——
+        // 卸载后 currentSrc 可能仍保留旧地址，不能用来判断。
+        const hasMedia = !!this.current;
+        const state = {
+          playing: !m.paused && !m.ended,
+          ready: m.readyState >= 2,
+          ended: m.ended,
+          rate: m.playbackRate,
+          volume: m.volume,
+          muted: m.muted,
+          duration: Number.isFinite(m.duration) ? m.duration : 0,
+          hasMedia
+        };
+        paintPlaybackEnabled(hasMedia);
+        this.emit('state', state);
+      };
       m.addEventListener('loadedmetadata', () => {
         this.applyDefaultPitch();
         this.emit('duration', Number.isFinite(m.duration) ? m.duration : 0);
@@ -412,5 +443,18 @@
     return { paint, paintRate };
   }
 
-  window.PLTPlayer = { Player, bindTransport, RATES };
+  window.PLTPlayer = {
+    Player,
+    bindTransport,
+    RATES,
+    /** 刷新播放类控件的可用状态（诊断 / 应用层用） */
+    refreshEnabled: () => paintPlaybackEnabled(!!(activePlayer && activePlayer.current)),
+    /** 强制设置控件可用状态（诊断用，绕过媒体状态推断） */
+    forceEnabled: (hasMedia) => paintPlaybackEnabled(!!hasMedia),
+    /** 读取控件禁用状态（诊断用） */
+    enabledStates: () => PLAYBACK_CONTROLS.map((id) => {
+      const n = document.getElementById(id);
+      return { id, disabled: n ? n.disabled : null };
+    })
+  };
 }());

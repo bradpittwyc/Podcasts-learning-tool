@@ -22,6 +22,27 @@ function install(ctx) {
       return true;
     })()`);
 
+    // ───────── 0. 未加载媒体时播放类控件应不可用 ─────────
+    out['0a 无媒体时播放键禁用'] = await run('0a', `(async () => {
+      const off = window.__pltSmoke.playbackControlsState(true);
+      const btn = document.getElementById('btnPlay');
+      const disabledTitle = btn.getAttribute('title');
+      btn.click();                                  // 禁用状态下点击应无任何效果
+      await new Promise((r) => setTimeout(r, 400));
+      const afterClickPaused = document.getElementById('video').paused;
+      const restored = await window.__pltSmoke.restoreMedia();
+      await new Promise((r) => setTimeout(r, 1500));
+      const live = window.__pltSmoke.playbackControlsState(false);
+      return {
+        allDisabled: off.states.every((s) => s.disabled === true),
+        disabledTitle,
+        afterClickPaused,
+        restored,
+        liveAllEnabled: live.states.every((s) => s.disabled === false),
+        live
+      };
+    })()`);
+
     // ───────── 1. 播放 / 暂停图标切换 ─────────
     // 先归零状态：暂停 + 回到开头
     await js(`(async () => {
@@ -334,25 +355,28 @@ function install(ctx) {
 
     out['5b 扫描全文难词'] = await run('5b', `(async () => {
       const before = window.__pltSmoke.costStats();
-      document.getElementById('btnScanAll').click();
-      await new Promise((r) => setTimeout(r, 18000));
+      const scan = await window.__pltSmoke.scanNow();
       const after = window.__pltSmoke.costStats();
+      const spans = [...document.querySelectorAll('#transcript .w')];
       return {
-        hits: document.querySelectorAll('#transcript .w.hit').length,
-        inlineTranslations: [...document.querySelectorAll('#transcript .w.hit .wz')].slice(0, 10).map((n) => n.textContent),
+        // 规格：正文里不插中文、不加底色；只维护「可取词 / 被锁定」两种状态
+        inlineChineseNodes: document.querySelectorAll('#transcript .wz').length,
+        // 允许唯一的 .w.active（当前正在查的那个词）；其余单词不得有任何底色
+        coloredWords: spans.filter((s) => !s.classList.contains('active')
+          && getComputedStyle(s).backgroundColor !== 'rgba(0, 0, 0, 0)').length,
+        lockedWords: spans.filter((s) => s.classList.contains('locked')).length,
+        totalWords: spans.length,
         cost: document.getElementById('sbCost').textContent,
         apiCallsDelta: after.calls - before.calls,
         tokensDelta: after.totalTokens - before.totalTokens,
-        cachedDelta: after.cachedHits - before.cachedHits,
-        skippedDelta: after.skipped - before.skipped,
         scanLabel: document.getElementById('scanLabel').textContent,
-        costTitle: document.getElementById('sbCost').title
+        scan
       };
     })()`);
 
     out['5c 词典面板（真实请求）'] = await run('5c', `(async () => {
-      const spans = document.querySelectorAll('#transcript .w.hit');
-      const target = [...document.querySelectorAll('#transcript .w')].find((s) => s.dataset.lower === 'unprecedented') || spans[0];
+      const spans = document.querySelectorAll('#transcript .w');
+      const target = [...spans].find((s) => s.dataset.lower === 'unprecedented') || spans[0];
       if (!target) return { error: '没有可点击的单词' };
       const before = window.__pltSmoke.costStats();
       target.click();
@@ -391,6 +415,25 @@ function install(ctx) {
         wrapDisplay: getComputedStyle(wrap).display,
         wrapFlexWrap: getComputedStyle(wrap).flexWrap,
         inlineWordCount: document.querySelectorAll('#dictWord span').length
+      };
+    })()`);
+
+    // 单词渲染诊断：是否出现了嵌套/重复的单词节点
+    out['5f 单词节点结构'] = await run('5f', `(() => {
+      const cues = [...document.querySelectorAll('#transcript .cue')];
+      const target = cues[0];
+      const en = target.querySelector('.cue-en');
+      const spans = [...en.querySelectorAll('.w')];
+      const nested = spans.filter((s) => s.querySelector('.w')).length;
+      const wz = [...en.querySelectorAll('.wz')];
+      return {
+        cueHtml: en.innerHTML.slice(0, 420),
+        spanCount: spans.length,
+        nestedSpanCount: nested,
+        wzCount: wz.length,
+        firstSpan: spans[0] ? { text: spans[0].textContent, cls: spans[0].className, bg: getComputedStyle(spans[0]).backgroundColor } : null,
+        hitCount: spans.filter((s) => s.classList.contains('hit')).length,
+        layerCount: en.querySelectorAll('.w > .w').length
       };
     })()`);
 
@@ -446,14 +489,20 @@ function install(ctx) {
         w: s.dataset.lower, cefr: s.dataset.cefr,
         cursor: getComputedStyle(s).cursor,
         struck: getComputedStyle(s).textDecorationLine.includes('line-through'),
+        color: getComputedStyle(s).color,
         hasTitle: !!s.title
       }));
+      const normal = spans.filter((s) => !s.classList.contains('locked'));
       return {
         totalWords: spans.length,
         lockedCount: locked.length,
         hitCount: spans.filter((s) => s.classList.contains('hit')).length,
         sample,
-        allNotAllowed: sample.length > 0 && sample.every((s) => s.cursor === 'not-allowed' && s.struck),
+        // 规格：锁定词只改光标，不改颜色、不加删除线、不加提示
+        allNotAllowed: sample.length > 0 && sample.every((s) => s.cursor === 'not-allowed'),
+        noneStruck: sample.every((s) => s.struck === false),
+        noneHasTitle: sample.every((s) => s.hasTitle === false),
+        colorUnchanged: sample.length > 0 && normal.length > 0 && sample[0].color === getComputedStyle(normal[0]).color,
         scan,
         diag: window.__pltSmoke.lockDiag()
       };

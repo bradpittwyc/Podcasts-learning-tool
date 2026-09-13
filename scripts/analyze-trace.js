@@ -31,13 +31,22 @@ if (i > 0) {
         const dPause = Math.abs(g.playing.pause.cy - g.playing.btn.cy);
         return dPlay <= 0.6 && dPause <= 0.6 && Math.abs(g.transport.diff) <= 0.6;
       })()],
-      ['6b 锁定词呈禁用态', obj['6b 低级别词呈禁用态'] && obj['6b 低级别词呈禁用态'].lockedCount > 10
-        && obj['6b 低级别词呈禁用态'].allNotAllowed === true],
+      ['6b 锁定词只是不可点击', (() => {
+        const r = obj['6b 低级别词呈禁用态'];
+        if (!r) return false;
+        return r.lockedCount > 10 && r.allNotAllowed === true && r.noneStruck === true
+          && r.noneHasTitle === true && r.colorUnchanged === true;
+      })()],
       ['6b2 点锁定词不弹面板', obj['6b2 点锁定词无反应'] && obj['6b2 点锁定词无反应'].panelVisible === false
         && obj['6b2 点锁定词无反应'].apiCallsDelta === 0],
       ['2b 进度条拖动到 50%', obj['2b 拖动到 50%'] && obj['2b 拖动到 50%'].tUp > 20],
       ['3a 点字幕跳转（不回到开头）', obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'] && obj['3a 点最后一行（应跳到 ~57s，保持暂停/不回到开头）'].after > 30],
       ['4a 字幕菜单可用', obj['4a 字幕按钮与菜单'] && obj['4a 字幕按钮与菜单'].menuVisible],
+      ['5b 扫描后正文保持干净', (() => {
+        const r = obj['5b 扫描全文难词'];
+        if (!r) return false;
+        return r.inlineChineseNodes === 0 && r.coloredWords === 0 && r.lockedWords >= 0;
+      })()],
       ['5a 点词出释义', obj['5a 点击单词 → 词典面板'] && obj['5a 点击单词 → 词典面板'].panelVisible]
     ];
     console.log('\n=== 断言明细 ===');

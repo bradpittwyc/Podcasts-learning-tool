@@ -1274,9 +1274,16 @@ function runSmokeTest() {
       log('截图已保存：' + out + ` (${shot.getSize().width}x${shot.getSize().height})`);
 
       // 第二张：文字区 1:1 裁剪（检查 Times New Roman / 微软雅黑 渲染；先于弹窗拍摄）
+      // 时间戳对齐也在这里看得最清楚
+      await js(`(() => {
+        const t = document.getElementById('transcript');
+        t.scrollTop = 0;
+        return true;
+      })()`).catch(() => { });
+      await new Promise((r) => setTimeout(r, 250));
       const clip = await js(`(() => {
         const r = document.getElementById('transcript').getBoundingClientRect();
-        return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: 280 };
+        return { x: Math.round(r.x), y: Math.round(r.y), width: Math.round(r.width), height: 180 };
       })()`);
       const shot3 = await mainWindow.webContents.capturePage(clip);
       const out3 = out.replace(/\.png$/i, '-text.png');

@@ -85,7 +85,6 @@
     lookup = new window.PLTDict.Lookup({
       onCost: () => paintCost(),
       onStatus: (text, busy) => {
-        $('#apiStatus').classList.toggle('busy', !!busy);
         if (text) $('#sbMode').textContent = text;
         else paintMode();
       }
@@ -174,6 +173,28 @@
       lookupWords: (items, options) => window.PLT.llm.lookup(items, options),
       /** 只读诊断：当前是否正在扫描 */
       isScanning: () => !!lookup.scanning,
+      /** 诊断：刷新并读取播放控件的可用状态（模拟“未加载媒体”） */
+      playbackControlsState: (forceNoMedia) => {
+        const v = document.getElementById('video');
+        const ids = ['btnPlay', 'btnPrevLine', 'trPlay', 'trBack5', 'trMute', 'trFull'];
+        const snap = () => ids.map((id) => ({ id, disabled: document.getElementById(id).disabled }));
+        const wasMedia = state.media;
+        const wasUrl = state.media ? state.media.url : null;
+        if (forceNoMedia) {
+          player.unload();
+          state.media = null;
+          window.PLTPlayer.forceEnabled(false);
+          const off = snap();
+          return { mode: 'no-media', states: off, _restore: { wasMedia, wasUrl } };
+        }
+        window.PLTPlayer.refreshEnabled();
+        return { mode: 'live', hasMedia: !!player.current, states: snap() };
+      },
+      /** 诊断：恢复媒体（配合上面的模拟卸载） */
+      restoreMedia: async () => {
+        if (state.mediaList && state.mediaList.length) await loadMedia(state.mediaList[0]);
+        return { hasMedia: !!player.current };
+      },
       /** 只读诊断：本次会话的取词统计（请求数 / token / 估算费用） */
       costStats: () => ({ ...lookup.session, label: lookup.costLabel().text }),
       /** 模拟点击「扫描难词」并等待完成（自动化测试用，避免与后台扫描撞车） */
@@ -231,16 +252,11 @@
       })
     };
 
-    // 首次使用提示
+    // 首次使用提示（不填 Key 也能用：本地词典覆盖绝大多数词）
     if (!state.settings.llm.hasApiKey) {
       setTimeout(() => {
-        toast('还没有配置大模型 API Key：点右上角 ⚙ 设置 → 大模型 填入（推荐 DeepSeek，便宜且中文好）。未配置时播放、字幕、校对功能完全可用。', 'warn', 9000);
-        $('#apiStatus').classList.add('err');
-        $('#apiStatus').title = '未配置大模型 API Key';
+        toast('未配置大模型 API Key：内置离线词典已可用（分级取词 / 扫描难词 / 点词查义均 0 费用）。只有生僻词需要 AI，可到 ⚙ 设置 → 大模型 填入。', 'warn', 9000);
       }, 1200);
-    } else {
-      $('#apiStatus').classList.add('ok');
-      $('#apiStatus').title = '大模型已就绪';
     }
   }
 
@@ -1234,13 +1250,8 @@
     return res;
   }
 
-  /** 状态灯提示（可点击打开设置），不打断当前操作 */
+  /** 状态提示（不打断当前操作）；状态灯已被移除，这里只留 toast */
   function statusHint(text, kind) {
-    const dot = $('#apiStatus');
-    dot.className = 'status-dot' + (kind ? ' ' + kind : '');
-    dot.title = text;
-    dot.style.cursor = 'pointer';
-    dot.onclick = () => settingsPanel.open('llm');
     if (text) toast(text, kind === 'err' ? 'warn' : 'ok', 6000);
   }
 
@@ -1371,9 +1382,7 @@
     const grab = await window.PLTDict.screenCaptureLookup();
     if (!grab) return;
     if (!grab.dataUrl) { toast('截图失败', 'err'); return; }
-    $('#apiStatus').classList.add('busy');
     const ocr = await window.PLTDict.ocrText(grab.dataUrl, { langs: 'en-US,zh-Hans-CN' });
-    $('#apiStatus').classList.remove('busy');
     if (!ocr || !ocr.ok) {
       toast(`OCR 失败：${(ocr && (ocr.error || ocr.code)) || '未知错误'}。可在设置 → 高级 里做 OCR 可用性检测。`, 'err', 8000);
       return;

@@ -35,7 +35,6 @@
       </div>
       <div class="titlebar-drag" id="titlebarDrag"></div>
       <div class="titlebar-right">
-        <span class="status-dot" id="apiStatus" title="大模型连接状态"></span>
         <div class="wco">
           <button class="wco-btn" id="btnMin" title="最小化"><svg viewBox="0 0 10 10"><path d="M0 5h10" stroke="currentColor" stroke-width="1" /></svg></button>
           <button class="wco-btn" id="btnMax" title="最大化"><svg viewBox="0 0 10 10"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1" /></svg></button>
@@ -66,7 +65,7 @@
 
       <div class="cb-group">
         <button class="cb-icon" id="btnPrevLine" title="上一句 (Ctrl+←)"><svg viewBox="0 0 20 20"><path d="M15 5v10L7 10l8-5ZM5 5v10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"/></svg></button>
-        <button class="cb-icon big" id="btnPlay" title="播放/暂停 (Space)" aria-label="播放/暂停">
+        <button class="cb-icon big" id="btnPlay" title="播放/暂停 (Space)" aria-label="播放/暂停" disabled>
           <svg viewBox="0 0 20 20" class="ic-play" aria-hidden="true"><path d="M6.4 4.2a.9.9 0 0 1 1.36-.77l7.4 4.8a.9.9 0 0 1 0 1.54l-7.4 4.8A.9.9 0 0 1 6.4 13.8z"/></svg>
           <svg viewBox="0 0 20 20" class="ic-pause" aria-hidden="true"><rect x="5.4" y="4" width="3.5" height="12" rx="1.2"/><rect x="11.1" y="4" width="3.5" height="12" rx="1.2"/></svg>
         </button>

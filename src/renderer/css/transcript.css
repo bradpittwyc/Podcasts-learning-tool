@@ -81,21 +81,25 @@
   font-size: 10.5px;
   line-height: 1.5;
   color: var(--text-3);
-  padding-top: 3px;
+  /* 与英文第一行对齐：line-height 固定为 28px（与 .cue-en 一致），
+     再用 padding-top 把小型字体的基线压到同一水平线上。
+     times 在 17.5px/28px 下的半行距约 5.25px，圆整后取 7px 视觉最齐。 */
+  padding-top: 7px;
   text-align: right;
   font-variant-numeric: tabular-nums;
   user-select: none;
   white-space: nowrap;
+  align-self: start;
 }
 .cue.current .cue-time { color: var(--accent-2); font-weight: 600; }
 
 .cue-text { min-width: 0; }
 
-/* 英文：Times New Roman */
+/* 英文：Times New Roman（行高固定，便于时间戳对齐） */
 .cue-en {
   font-family: var(--font-en);
   font-size: var(--en-size);
-  line-height: 1.6;
+  line-height: 28px;
   color: var(--text-1);
   letter-spacing: .15px;
   word-break: normal;
@@ -113,7 +117,9 @@
 .cue-zh:empty { display: none; }
 .transcript.hide-zh .cue-zh { display: none; }
 
-/* ── 单词：干净的高亮，不切割字形 ── */
+/* ── 单词：正文保持干净 ──
+   不加底色、不加中文小注、不做任何颜色标记；只有悬停和点击时的反馈。
+   「哪些词能查」由级别锁定控制（locked = cursor:not-allowed）。 */
 .w {
   cursor: pointer;
   border-radius: 4px;
@@ -125,40 +131,10 @@
   transition: background var(--dur-fast), color var(--dur-fast);
 }
 .w:hover { background: var(--accent-light); color: var(--accent-2); }
-/* 达标难词：柔和底色（原来的内阴影会压住字形，看起来像文字重影，已去掉） */
-.w.hit {
-  background: var(--hl-target);
-  box-shadow: none;
-}
-.w.hit:hover { background: var(--accent-light); }
-.w.queried { background: var(--hl-queried); }
 .w.active { background: var(--accent); color: var(--accent-text); }
-/* 级别锁定：呈现为不可点击（灰掉 + 禁用光标），而不是点了弹提示框 */
-.w.locked {
-  cursor: not-allowed;
-  color: var(--text-3);
-  background: transparent;
-  text-decoration: line-through;
-  text-decoration-color: color-mix(in srgb, var(--text-3) 55%, transparent);
-  text-decoration-thickness: 1px;
-}
-.w.locked:hover { background: transparent; color: var(--text-3); }
-.w.loading {
-  background: linear-gradient(90deg, var(--bg-subtle), var(--accent-light), var(--bg-subtle));
-  background-size: 200% 100%;
-  animation: shimmer 1.1s linear infinite;
-  color: transparent;
-}
-@keyframes shimmer { to { background-position: -200% 0; } }
-/* 单词内的中文小注 */
-.w .wz {
-  font-family: var(--font-cn);
-  font-size: .78em;
-  color: var(--text-2);
-  margin-left: 3px;
-  opacity: .95;
-}
-.w.hit .wz, .cue.current .w .wz { color: var(--accent-2); }
+/* 级别锁定：只是不可点击，不改颜色、不加删除线、不加任何标记 */
+.w.locked { cursor: not-allowed; }
+.w.locked:hover { background: transparent; color: inherit; }
 
 /* ── 编辑模式 ── */
 .transcript.editing .w { cursor: text; }

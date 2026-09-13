@@ -181,18 +181,15 @@
           container.appendChild(document.createTextNode(part.text));
           continue;
         }
+        // 达标词只做「可查」标记，不在正文里插入中文、不加底色
         const info = this.lookupWord(part.lower);
         const blocked = info && info.status === 'blocked';
         const span = el('span', {
-          class: `w${info ? (info.status === 'hit' ? ' hit' : info.status === 'queried' ? ' queried' : blocked ? ' locked' : '') : ''}`,
+          class: `w${blocked ? ' locked' : ''}`,
           dataset: { lower: part.lower, word: part.text }
         });
         span.appendChild(document.createTextNode(part.text));
-        if (info && info.status === 'hit' && info.translation) {
-          span.appendChild(el('span', { class: 'wz', text: info.translation }));
-        }
         if (info && info.cefr && !this.opts.hideLevelBadge) span.dataset.cefr = info.cefr;
-        if (blocked) span.title = `低于当前取词级别（${info.cefr || '—'}）· 级别锁定中，不可取词`;
         container.appendChild(span);
       }
     }
@@ -245,30 +242,17 @@
     }
 
     applyWordStyle(span, info) {
-      span.classList.remove('hit', 'queried', 'loading', 'locked');
+      // 正文保持干净：不插入中文、不加底色、不加删除线。
+      // 这里只维护「是否可取词」这一个状态（locked = 不可点击）。
+      span.classList.remove('locked');
       span.removeAttribute('title');
       const old = span.querySelector('.wz');
       if (old) old.remove();
       if (!info) { delete span.dataset.cefr; return; }
       if (info.cefr) span.dataset.cefr = info.cefr;
       else delete span.dataset.cefr;
-
-      // 级别锁定优先：低于所选级别的词直接呈现为不可点击
-      if (info.status !== 'hit' && this.isLockedOut(info)) {
+      if (info.status === 'blocked' || (info.status !== 'hit' && this.isLockedOut(info))) {
         span.classList.add('locked');
-        span.title = `低于当前取词级别（${info.cefr || '—'}）· 级别锁定中，不可取词`;
-        return;
-      }
-      if (info.status === 'hit') {
-        span.classList.add('hit');
-        if (info.translation) span.appendChild(el('span', { class: 'wz', text: info.translation }));
-      } else if (info.status === 'queried') {
-        span.classList.add('queried');
-      } else if (info.status === 'loading') {
-        span.classList.add('loading');
-      } else if (info.status === 'blocked') {
-        span.classList.add('locked');
-        span.title = `低于当前取词级别（${info.cefr || '—'}）· 级别锁定中，不可取词`;
       }
     }
 

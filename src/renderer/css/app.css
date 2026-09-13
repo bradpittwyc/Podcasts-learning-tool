@@ -80,12 +80,23 @@ button { cursor: default; border: none; background: none; }
   transition: background var(--dur-mid);
   margin-right: var(--sp-2);
   flex: none;
+  cursor: pointer;
 }
-/* 仅两种极克制的状态：就绪（清透绿） / 未配置（中性灰，不再刺眼红） */
+/* 仅两种极克制的状态：就绪 / 未配置（都不刺眼） */
 .status-dot.ok { background: #57c46a; }
 .status-dot.busy { background: var(--accent); animation: pulse 1.1s ease-in-out infinite; }
 .status-dot.err { background: var(--text-3); }
 @keyframes pulse { 50% { opacity: .35; } }
+
+/* 未加载媒体时：播放类按钮不可用 */
+.tr-btn:disabled, .cb-icon:disabled, .mini-btn:disabled {
+  opacity: .35;
+  cursor: not-allowed;
+  transform: none !important;
+  box-shadow: none !important;
+}
+.tr-btn:disabled:hover, .cb-icon:disabled:hover, .mini-btn:disabled:hover { background: transparent; }
+.tr-btn:disabled:active, .cb-icon:disabled:active, .mini-btn:disabled:active { transform: none !important; }
 
 /* ── 播放/暂停图标交换（暂停时=三角，播放中=两道竖）──
    关键：两个 SVG 必须**重叠在同一格**（grid-area: 1/1）。
