@@ -506,10 +506,11 @@ async function installPortable() {
   ];
   const tried = [];
   for (const [label, run] of attempts) {
-    const res = run();
-    if (!res.ok) { tried.push(label + ': ' + res.error); continue; }
-    if (await waitForScriptReady(logFile, 4000)) {
-      setTimeout(() => app.quit(), 500);
+    const res = await run();          // ← 必须 await：忘了它就会把 Promise 当成结果，永远判失败
+    if (!res.ok) { tried.push(label + ': ' + (res.error || '启动失败')); continue; }
+    if (await waitForScriptReady(logFile, 5000)) {
+      // 脚本已经在等我们退出了，这里直接关掉，剩下的交给它
+      setTimeout(() => app.quit(), 400);
       return { ok: true, target, ps1, logFile, strategy: label };
     }
     tried.push(label + ': 脚本未启动');
