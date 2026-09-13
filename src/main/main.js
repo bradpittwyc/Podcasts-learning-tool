@@ -19,6 +19,7 @@ const llm = require('./llm');
 const localDict = require('./local-dict');
 const ocr = require('./ocr');
 const screenText = require('./screen-text');
+const updater = require('./updater');
 
 const isDev = process.argv.includes('--dev') || !!process.env.PLT_DEV;
 const isSmoke = process.argv.includes('--smoke-test');
@@ -442,6 +443,9 @@ function buildMenu() {
         { label: '使用说明 / README', click: () => shell.openExternal('https://github.com/bradpittwyc/Podcasts-learning-tool#readme') },
         { label: '项目主页', click: () => shell.openExternal('https://github.com/bradpittwyc/Podcasts-learning-tool') },
         { type: 'separator' },
+        { label: '检查更新…', click: () => { mainWindow?.webContents.send('menu:action', 'check-update'); } },
+        { label: '打开发布页', click: () => updater.openRelease() },
+        { type: 'separator' },
         { label: '数据目录', click: () => shell.openPath(store.getDataDir()) },
         { label: '关于', click: () => mainWindow?.webContents.send('menu:action', 'about') }
       ]
@@ -517,6 +521,13 @@ function registerIpc() {
     dataDir: store.getDataDir(),
     packaged: app.isPackaged
   }));
+
+  // ── 自动更新 ──
+  ipcMain.handle('update:state', () => updater.getState());
+  ipcMain.handle('update:check', () => updater.check({}));
+  ipcMain.handle('update:download', () => updater.download());
+  ipcMain.handle('update:install', () => updater.install());
+  ipcMain.handle('update:openRelease', () => { updater.openRelease(); return true; });
   // 渲染进程就绪握手：此时才投递待打开文件
   ipcMain.handle('app:ready', (e) => {
     const win = BrowserWindow.fromWebContents(e.sender);
@@ -1075,6 +1086,10 @@ app.whenReady().then(() => {
   createMainWindow();
   registerHotkeys();
 
+  // ── 自动更新 ──
+  updater.init({ send: (s) => { try { mainWindow?.webContents.send('update:status', s); } catch (_) {} } });
+  updater.scheduleAutoCheck(mainWindow);
+
   if (isSmoke) runSmokeTest();
 
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createMainWindow(); });
@@ -1419,6 +1434,25 @@ function runSmokeTest() {
         log('文件夹导入回归：' + (folderOk ? 'PASS' : 'FAIL'));
       } else {
         log('文件夹导入回归：跳过（未传 --smoke-folder）');
+      }
+
+      // ── 自动更新诊断（--smoke-update 时真连 GitHub Release）──
+      let updateOk = true;
+      log('【更新】' + JSON.stringify(updater.getState()));
+      if (process.argv.includes('--smoke-update')) {
+        const st = await updater.check({ force: true });   // 开发模式也真连 GitHub，便于验证
+        log('【更新·检查】' + JSON.stringify(st));
+        updateOk = !!(st && ['available', 'uptodate'].includes(st.phase));
+        if (process.argv.includes('--smoke-update-download') && st.phase === 'available') {
+          const dl = await updater.download();
+          let exists = false; let size = 0;
+          try { exists = fs.existsSync(dl.savedTo); size = exists ? fs.statSync(dl.savedTo).size : 0; } catch (_) {}
+          log('【更新·下载】' + JSON.stringify({ phase: dl.phase, percent: dl.percent, savedTo: dl.savedTo, exists, size, error: dl.error }));
+          updateOk = updateOk && dl.phase === 'downloaded' && exists && size > 1024 * 1024;
+        }
+        log('更新通路：' + (updateOk ? 'PASS' : 'FAIL'));
+      } else {
+        log('更新通路：跳过（未传 --smoke-update）');
       }
 
       log('结果：' + (ok && folderOk && uiOk && llmPathOk ? 'PASS' : 'FAIL')

@@ -122,5 +122,14 @@ contextBridge.exposeInMainWorld('PLT', {
     saveToDir: (payload) => invoke('record:saveToDir', payload)
   },
 
+  update: {
+    state: () => invoke('update:state'),
+    check: () => invoke('update:check'),
+    download: () => invoke('update:download'),
+    install: () => invoke('update:install'),
+    openRelease: () => invoke('update:openRelease'),
+    onStatus: (cb) => on('update:status', cb)
+  },
+
   onQuickPayload: (cb) => on('quick:payload', cb)
 });

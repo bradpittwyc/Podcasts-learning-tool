@@ -122,6 +122,7 @@
     applySettings(state.settings);
     applyTheme(await window.PLT.theme.resolve());
     paintPortable();
+    initUpdater();
     updateSubtitleButton();
 
     bindUi();
@@ -296,6 +297,11 @@
       $('#sbPortable').textContent = info.portable ? `便携模式 · ${info.version}` : `v${info.version}`;
       $('#sbPortable').title = info.dataDir;
     });
+  }
+
+  /** 自动更新：状态栏角标 + 帮助菜单「检查更新…」 */
+  function initUpdater() {
+    if (window.PLTUpdate) window.PLTUpdate.init();
   }
 
   function paintLevelLabel() {
@@ -1668,6 +1674,7 @@
       'lookup-selection': () => lookupSelection(),
       'screen-ocr': () => screenLookup(),
       'scan-all': () => autoScan({ silent: false, force: true }),
+      'check-update': () => window.PLTUpdate && window.PLTUpdate.modal(),
       'show-vocab': () => switchTab('vocab'),
       'zoom-in': () => zoom(0.1),
       'zoom-out': () => zoom(-0.1),

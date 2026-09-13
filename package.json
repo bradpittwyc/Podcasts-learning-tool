@@ -1,7 +1,7 @@
 {
   "name": "podcasts-learning-tool",
   "productName": "Podcasts Learning Tool",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "英语学习神器 — 播放 MP4/MP3 与播客/视频字幕跟读，点击文字跳转时间戳，大模型分级取词查词典（雅思/托福/GRE/母语级）。",
   "main": "src/main/main.js",
   "author": {
@@ -27,6 +27,8 @@
     "dist:installer": "electron-builder --win nsis --publish never",
     "dist:dir": "electron-builder --win --dir --publish never",
     "test": "node scripts/selftest.js",
+    "test:update": "node scripts/update-selftest.js",
+    "test:all": "node scripts/selftest.js && node scripts/update-selftest.js && node scripts/ocr-selftest.js",
     "test:ocr": "node scripts/ocr-selftest.js",
     "sample": "node scripts/make-sample.js",
     "icon": "node scripts/make-icon.js",
@@ -70,11 +72,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "icon": "build/icon.ico"
@@ -95,6 +101,17 @@
       "unpackDirName": "PodcastsLearningTool"
     },
     "compression": "maximum",
-    "asar": true
+    "asar": true,
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "bradpittwyc",
+        "repo": "Podcasts-learning-tool",
+        "releaseType": "release"
+      }
+    ]
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
   }
 }

@@ -403,6 +403,9 @@
           }
         })
       ]));
+
+      // ── 软件更新 ──
+      if (window.PLTUpdate) form.appendChild(window.PLTUpdate.section(this.settings));
     }
   }
 

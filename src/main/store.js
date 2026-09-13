@@ -88,6 +88,12 @@ const DEFAULT_SETTINGS = {
     y: null,
     maximized: false,
     alwaysOnTop: false
+  },
+  // ── 自动更新（GitHub Release） ──────────────────────────────
+  update: {
+    autoCheck: true,          // 启动后自动检查（只提示，不自动下载）
+    autoCheckDelayMs: 12000,  // 启动后延迟多久检查，避开首屏加载
+    lastCheck: 0
   }
 };
 
