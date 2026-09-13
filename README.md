@@ -33,12 +33,12 @@
 
 ### 方式一：下载即用（推荐给普通用户）
 
-到 [Releases](https://github.com/bradpittwyc/Podcasts-learning-tool/releases) 下载：
+到 [Releases](https://github.com/bradpittwyc/Podcasts-learning-tool/releases/latest) 下载：
 
 | 文件 | 说明 |
 | --- | --- |
-| `Podcasts Learning Tool-Setup-1.0.0.exe` | 安装版：开始菜单 + 桌面快捷方式，数据存于 `%APPDATA%` |
-| `Podcasts Learning Tool-Portable-1.0.0.exe` | **便携版**：双击即运行，数据存于 exe 同目录 `PodcastsLearningData\` |
+| [**Podcasts Learning Tool-Portable-1.0.0.exe**](https://github.com/bradpittwyc/Podcasts-learning-tool/releases/download/v1.0.0/Podcasts.Learning.Tool-Portable-1.0.0.exe) | **便携版**：双击即运行，数据存于 exe 同目录 `PodcastsLearningData\`，U 盘即插即用 |
+| [Podcasts Learning Tool-Setup-1.0.0.exe](https://github.com/bradpittwyc/Podcasts-learning-tool/releases/download/v1.0.0/Podcasts.Learning.Tool-Setup-1.0.0.exe) | 安装版：开始菜单 + 桌面快捷方式，数据存于 `%APPDATA%` |
 
 > 未签名程序首次运行可能被 SmartScreen 拦截，点「更多信息 → 仍要运行」即可。
 
