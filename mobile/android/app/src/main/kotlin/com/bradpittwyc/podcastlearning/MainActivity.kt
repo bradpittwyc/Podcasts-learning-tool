@@ -1,4 +1,4 @@
-package com.example.podcast_skel
+package com.bradpittwyc.podcastlearning
 
 import io.flutter.embedding.android.FlutterActivity
 
