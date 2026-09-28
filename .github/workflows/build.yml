@@ -39,20 +39,13 @@ jobs:
           cache: npm
       - run: npm ci
 
+      # ⚠️ 离线词典是 extraResources 的一部分（resources/local-dict.json.gz），仓库不收录该产物，
+      #    必须在 electron-builder 之前生成，否则干净 checkout 打包会因缺文件失败。
+      - name: 生成离线词典（ECDICT）
+        run: npm run dict:fetch
+
       - name: 构建安装版与便携版
         run: npx electron-builder --win --publish never
-
-      # ⚠️ 资产名必须与 latest.yml 里写的一致（electron-builder 会把空格换成连字符），
-      #    否则 electron-updater 按 latest.yml 拼出来的下载地址会 404，安装版就永远升不了级。
-      #    所以这里统一把文件名规范化后再上传。
-      - name: 规范化资产名（空格 → 连字符）
-        shell: pwsh
-        run: |
-          Get-ChildItem release -File | Where-Object { $_.Name -match ' ' } | ForEach-Object {
-            $new = $_.Name -replace ' ', '-'
-            Rename-Item -LiteralPath $_.FullName -NewName $new
-            Write-Host "$($_.Name)  ->  $new"
-          }
 
       - name: 产出清单
         shell: pwsh
@@ -94,6 +87,10 @@ jobs:
 
       - name: 生成 icns 图标
         run: npm run icons:mac
+
+      # 离线词典是 extraResources 的一部分，仓库不收录，须在打包前生成。
+      - name: 生成离线词典（ECDICT）
+        run: npm run dict:fetch
 
       # 双架构：arm64 (Apple Silicon) + x64 (Intel)，产物各自带架构后缀
       - name: 构建 dmg 与 zip（x64 + arm64）

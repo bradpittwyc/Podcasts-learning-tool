@@ -97,11 +97,11 @@
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Podcasts Learning Tool",
-      "artifactName": "${productName}-Setup-${version}.${ext}",
+      "artifactName": "Podcasts-Learning-Tool-Setup-${version}.${ext}",
       "deleteAppDataOnUninstall": false
     },
     "portable": {
-      "artifactName": "${productName}-Portable-${version}.${ext}",
+      "artifactName": "Podcasts-Learning-Tool-Portable-${version}.${ext}",
       "requestExecutionLevel": "user",
       "unpackDirName": "PodcastsLearningTool"
     },

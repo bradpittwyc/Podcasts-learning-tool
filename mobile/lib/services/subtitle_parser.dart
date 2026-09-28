@@ -24,7 +24,11 @@ class SubtitleParser {
       if (times == null) continue;
 
       final textLines = lines.sublist(timeIdx + 1);
-      final text = textLines.join('\n').trim();
+      // 剥掉 <i>/<font>/<c> 等标记（YouTube 生成的 VTT 常见），与桌面版 selftest 断言一致。
+      final text = textLines
+          .map((l) => l.replaceAll(RegExp(r'<[^>]+>'), ''))
+          .join('\n')
+          .trim();
       if (text.isEmpty) continue;
 
       cues.add(Cue(startMs: times[0], endMs: times[1], text: text));
