@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="UTF-8" />
-<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob: plt-media: file:; media-src 'self' plt-media: file: blob: data: https:; img-src 'self' data: blob: plt-media: file:; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; font-src 'self' data:;" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'self' 'unsafe-inline' data: blob: plt-media: file:; media-src 'self' plt-media: file: blob: data: https:; img-src 'self' data: blob: plt-media: file: https://i.ytimg.com; script-src 'self' 'unsafe-inline' https://www.youtube.com; frame-src https://www.youtube.com https://www.youtube-nocookie.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:;" />
 <title>Podcasts Learning Tool — 英语学习神器</title>
 <link rel="stylesheet" href="css/tokens.css" />
 <link rel="stylesheet" href="css/app.css" />
@@ -54,6 +54,10 @@
           <svg viewBox="0 0 20 20"><rect x="2.5" y="4.5" width="15" height="11" rx="2" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M5 12h4M11 12h4M5 9h3M10 9h5" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
           <span id="subLabel">字幕</span>
           <svg viewBox="0 0 20 20" width="12" height="12" style="opacity:.6"><path d="M6 8.5l4 4 4-4" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <button class="cb-btn" id="btnLink" title="粘贴视频链接（在线播放 / 下载到本地）">
+          <svg viewBox="0 0 20 20"><path d="M8.5 11.5a3 3 0 0 0 4.6.4l2.4-2.4a3 3 0 0 0-4.24-4.24l-1.1 1.1M11.5 8.5a3 3 0 0 0-4.6-.4L4.5 10.5a3 3 0 0 0 4.24 4.24l1.1-1.1" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></svg>
+          <span>链接</span>
         </button>
         <button class="cb-btn" id="btnOpenFolder" title="批量导入文件夹">
           <svg viewBox="0 0 20 20"><path d="M3 6a1.5 1.5 0 0 1 1.5-1.5h3L9 6h6.5A1.5 1.5 0 0 1 17 7.5V14a1.5 1.5 0 0 1-1.5 1.5h-11A1.5 1.5 0 0 1 3 14V6Z" fill="none" stroke="currentColor" stroke-width="1.4"/><path d="M10 9v4M8 11h4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"/></svg>
@@ -129,6 +133,8 @@
           </div>
 
           <video id="video" class="media" playsinline></video>
+          <!-- 在线视频（YouTube）挂载点：在线模式下盖住 #video -->
+          <div id="ytHost" class="yt-host hidden"></div>
           <div id="audioVisual" class="audio-visual hidden">
             <div class="vinyl">
               <svg viewBox="0 0 120 120" width="150" height="150"><circle cx="60" cy="60" r="56" fill="none" stroke="currentColor" stroke-width="1" opacity=".35"/><circle cx="60" cy="60" r="42" fill="none" stroke="currentColor" stroke-width="1" opacity=".25"/><circle cx="60" cy="60" r="28" fill="none" stroke="currentColor" stroke-width="1" opacity=".2"/><circle cx="60" cy="60" r="9" fill="currentColor" opacity=".5"/></svg>
@@ -344,6 +350,8 @@
   <script src="js/util.js"></script>
   <script src="js/subtitles.js"></script>
   <script src="js/player.js"></script>
+  <script src="js/ytplayer.js"></script>
+  <script src="js/youtube.js"></script>
   <script src="js/transcript.js"></script>
   <script src="js/dict.js"></script>
   <script src="js/shadow.js"></script>

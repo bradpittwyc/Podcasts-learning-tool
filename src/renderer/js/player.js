@@ -490,8 +490,87 @@
     return { paint, paintRate, updateRateLayout };
   }
 
+  /**
+   * 播放后端门面。
+   * 本地 <video>（Player）和在线 YouTube（YtPlayer）都挂在它底下，
+   * 对上层（传输栏 / 快捷键 / A-B / 状态栏）暴露同一套接口 —— 切换后端不用重新绑定 DOM。
+   */
+  class Playback {
+    constructor() {
+      this.impl = null;
+      this.kind = 'none';           // none | local | youtube
+      this.handlers = {};
+    }
+
+    /**
+     * 换后端：监听留在本门面上，事件由新后端转发过来，所以 DOM 只需绑一次。
+     * 注意这里**不销毁**旧后端 —— 本地 <video> 和 YouTube iframe 都要能来回切，
+     * 销毁再重建会重复挂载 media 事件监听。切走时只暂停。
+     */
+    use(impl, kind) {
+      const prev = this.impl;
+      if (prev && prev !== impl) {
+        try { prev.pause(); } catch (_) { /* ignore */ }
+      }
+      this.impl = impl;
+      this.kind = kind || 'local';
+      activePlayer = impl;
+      // 关键：后端的事件统一由门面转发，这样 bindTransport 只需绑一次
+      impl.emit = (evt, payload) => this.dispatch(evt, payload);
+      return impl;
+    }
+
+    dispatch(evt, payload) {
+      for (const fn of (this.handlers[evt] || [])) {
+        try { fn(payload); } catch (err) { console.error('[playback]', evt, err); }
+      }
+      // 在线后端不会走 Player 内部的 emitState，这里统一刷新播放类控件的可用状态，
+      // 否则切到 YouTube 后播放键还是灰的。
+      if (evt === 'loaded' || evt === 'state' || evt === 'unloaded') {
+        paintPlaybackEnabled(!!(this.impl && this.impl.current));
+      }
+    }
+
+    on(evt, fn) { (this.handlers[evt] = this.handlers[evt] || []).push(fn); return this; }
+    emit(evt, payload) { this.dispatch(evt, payload); }
+
+    // ── 代理到当前后端（没后端时给安全默认值，避免上层到处判空） ──
+    get current() { return this.impl ? this.impl.current : null; }
+    get media() { return this.impl ? this.impl.media : null; }
+    get mediaKind() { return this.impl ? this.impl.mediaKind : 'video'; }
+    get playing() { return this.impl ? this.impl.playing : false; }
+    get currentTime() { return this.impl ? this.impl.currentTime : 0; }
+    get duration() { return this.impl ? this.impl.duration : 0; }
+    get rate() { return this.impl ? this.impl.rate : 1; }
+    get ab() { return this.impl ? this.impl.ab : { a: null, b: null, active: false }; }
+    get loopMode() { return this.impl ? this.impl.loopMode : 'none'; }
+
+    load(info) { if (this.impl) this.impl.load(info); }
+    unload() { if (this.impl) this.impl.unload(); }
+    play() { if (this.impl) this.impl.play(); }
+    pause() { if (this.impl) this.impl.pause(); }
+    toggle() { if (this.impl) this.impl.toggle(); }
+    seek(t, o) { if (this.impl) this.impl.seek(t, o); }
+    nudge(d) { if (this.impl) this.impl.nudge(d); }
+    setRate(r, o) { return this.impl ? this.impl.setRate(r, o) : 1; }
+    stepRate(d) { return this.impl ? this.impl.stepRate(d) : 1; }
+    setVolume(v, o) { return this.impl ? this.impl.setVolume(v, o) : 1; }
+    toggleMute() { return this.impl ? this.impl.toggleMute() : false; }
+    bufferedEnd() { return this.impl ? this.impl.bufferedEnd() : 0; }
+    togglePip() { if (this.impl) this.impl.togglePip(); }
+    toggleFullscreen(c) { if (this.impl) this.impl.toggleFullscreen(c); }
+    applyDefaultPitch() { if (this.impl && this.impl.applyDefaultPitch) this.impl.applyDefaultPitch(); }
+    setABPoint(w, t) { return this.impl ? this.impl.setABPoint(w, t) : null; }
+    clearAB() { if (this.impl) this.impl.clearAB(); }
+    cycleAB() { return this.impl ? this.impl.cycleAB() : null; }
+    setLoopMode(m) { if (this.impl) this.impl.setLoopMode(m); }
+    setSegmentLoop(s, e) { if (this.impl) this.impl.setSegmentLoop(s, e); }
+    fadeVolume(a, b, ms) { if (this.impl && this.impl.fadeVolume) this.impl.fadeVolume(a, b, ms); }
+  }
+
   window.PLTPlayer = {
     Player,
+    Playback,
     bindTransport,
     RATES,
     /** 刷新播放类控件的可用状态（诊断 / 应用层用） */

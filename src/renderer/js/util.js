@@ -248,7 +248,7 @@
         onclick: () => { hideContextMenu(); item.action && item.action(); }
       }, [
         el('span', { text: item.label }),
-        item.kbd ? el('span', { class: 'kbd', text: item.kbd }) : null
+        item.kbd ? el('span', { class: 'kbd', text: kbdLabel(item.kbd) }) : null
       ]));
     }
     menu.classList.remove('hidden');
@@ -265,13 +265,29 @@
   });
   window.addEventListener('blur', hideContextMenu);
 
-  // ── 快捷键描述（mac 风格显示）──
+  // ── 快捷键描述 ──
   function prettyAccel(accel) {
     return String(accel || '')
       .replace(/CommandOrControl|CmdOrCtrl|Ctrl/gi, 'Ctrl')
       .replace(/Shift/gi, 'Shift')
       .replace(/Alt/gi, 'Alt')
       .replace(/Space/gi, '空格');
+  }
+
+  /**
+   * 快捷键在界面上的最终显示形态。
+   * macOS 用户不认「Ctrl+O」，认 ⌘O —— 这里统一做一次文案转换，
+   * 依赖 main 进程通过 app:info 打上的 body[data-platform]。
+   */
+  function kbdLabel(spec) {
+    if (!spec) return spec;
+    if (document.body.dataset.platform !== 'darwin') return spec;
+    return String(spec)
+      .replace(/Ctrl\s*\+\s*/g, '⌘')
+      .replace(/Shift\s*\+\s*/g, '⇧')
+      .replace(/Alt\s*\+\s*/g, '⌥')
+      .replace(/⌘\s*⇧\s*/g, '⇧⌘')
+      .replace(/\s*\+\s*/g, '');
   }
 
   // ── 简易存储（界面偏好）──
@@ -354,7 +370,7 @@
     $, $$, el, clear, escapeHtml, clamp, debounce, throttle,
     fmtClock, fmtBytes, fmtRelTime,
     toast, modal, confirm, prompt, contextMenu, hideContextMenu,
-    prettyAccel, ls, similarity, download,
+    prettyAccel, kbdLabel, ls, similarity, download,
     buildTags, renderTags, cefrTagClass
   };
 }());

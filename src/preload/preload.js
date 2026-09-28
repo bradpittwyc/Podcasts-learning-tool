@@ -122,6 +122,18 @@ contextBridge.exposeInMainWorld('PLT', {
     saveToDir: (payload) => invoke('record:saveToDir', payload)
   },
 
+  // ── 在线视频（YouTube） ──
+  youtube: {
+    parse: (input) => invoke('yt:parse', input),
+    meta: (url) => invoke('yt:meta', url),
+    toolStatus: () => invoke('yt:toolStatus'),
+    installTool: () => invoke('yt:installTool'),
+    download: (payload) => invoke('yt:download', payload),
+    cancel: () => invoke('yt:cancel'),
+    openDir: (dir) => invoke('yt:openDir', dir),
+    onProgress: (cb) => on('yt:progress', cb)
+  },
+
   update: {
     state: () => invoke('update:state'),
     check: () => invoke('update:check'),

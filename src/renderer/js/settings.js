@@ -161,9 +161,7 @@
         type: 'password',
         placeholder: !s.llm.hasApiKey
           ? 'sk-...'
-          : (s.llm.apiKeySource === 'bundled'
-            ? `正在使用内置 Key：${s.llm.apiKeyHint}（填入自己的 Key 可覆盖）`
-            : `已保存：${s.llm.apiKeyHint}（留空则不修改）`)
+          : `已保存：${s.llm.apiKeyHint}（留空则不修改）`
       });
       const keyRow = el('div', { style: { display: 'flex', gap: '8px' } }, [
         keyInput,
@@ -183,7 +181,7 @@
           onclick: async () => {
             await window.PLT.settings.setApiKey('');
             await this.open('llm');
-            toast('已清除 API Key（不再使用内置 Key，查词将不可用）', 'warn');
+            toast('已清除 API Key（点选看释义将不可用，分级取词与全文扫描仍可离线使用）', 'warn');
           }
         })
       ]);
@@ -361,11 +359,15 @@
       form.appendChild(this.field('重播当前句', this.input('hotkeys.repeatLine', { placeholder: 'Alt+Shift+R' })));
 
       form.appendChild(el('div', { class: 'section-title', text: '应用内快捷键' }));
+      const macUI = document.body.dataset.platform === 'darwin';
+      // macOS 的 ⌘H 是系统「隐藏窗口」，本应用在该平台上改用 ⌃H，这里要跟着显示
+      const hideSubKey = macUI ? '⌃H' : 'Ctrl + H';
       const keys = [
-        ['空格', '播放 / 暂停'], ['← / →', '后退 / 前进 5 秒'], ['Shift + ← / →', '后退 / 前进 10 秒'],
-        ['↑ / ↓', '上一句 / 下一句'], ['Enter', '从选中句开始播放'], ['Ctrl + R', '重播当前句'],
-        ['Ctrl + [ / ]', '减速 / 加速'], ['Ctrl + H', '显示或隐藏字幕'], ['Ctrl + D', '查询选中文本'],
-        ['Ctrl + Shift + S', '屏幕取词（截图 OCR）'], ['Ctrl + Shift + D', '扫描全文难词'], ['F', '全屏'], ['L', '单句循环'], ['Ctrl + ,', '设置']
+        ['空格', '播放 / 暂停'], [U.kbdLabel('Shift + ← / →'), '后退 / 前进 10 秒'], ['← / →', '后退 / 前进 5 秒'],
+        ['↑ / ↓', '上一句 / 下一句'], ['Enter', '从选中句开始播放'], [U.kbdLabel('Ctrl + R'), '重播当前句'],
+        [U.kbdLabel('Ctrl + [ / ]'), '减速 / 加速'], [hideSubKey, '显示或隐藏字幕'], [U.kbdLabel('Ctrl + D'), '查询选中文本'],
+        [U.kbdLabel('Ctrl + Shift + S'), '屏幕取词（截图 OCR）'], [U.kbdLabel('Ctrl + Shift + D'), '扫描全文难词'],
+        ['F', '全屏'], ['L', '单句循环'], [U.kbdLabel('Ctrl + ,'), '设置']
       ];
       const list = el('div', { style: { display: 'grid', gridTemplateColumns: 'auto 1fr auto 1fr', gap: '6px 14px', alignItems: 'center' } });
       for (const [k, v] of keys) {
@@ -392,11 +394,16 @@
         el('button', {
           class: 'cb-btn', text: 'OCR 可用性检测',
           onclick: async () => {
+            const isMac = document.body.dataset.platform === 'darwin';
+            // 首次触发会现场编译 helper（xcrun swiftc），先垫一句提示，别让用户以为卡住
+            if (isMac) toast('正在准备 macOS Vision Helper（首次使用需就地编译，约十几秒）…', 'ok', 4000);
             const res = await window.PLT.screen.ocrProbe();
             if (res.ok) {
-              toast(`Windows OCR 引擎可用（识别语言：${res.lang || '系统默认'}）。截图取词会在首次使用时请求屏幕录制权限。`, 'ok', 5200);
+              toast(`${res.engine || 'OCR'} 引擎可用（识别语言：${res.lang || '系统默认'}）。截图取词会在首次使用时请求屏幕录制权限。`, 'ok', 5200);
             } else if (res.code === 'NO_OCR_ENGINE') {
               toast('Windows OCR 引擎不可用：请在「设置 → 时间和语言 → 语言和区域 → 添加语言」中安装英语（美国）语言包（含光学字符识别组件）。', 'err', 9000);
+            } else if (res.code === 'NO_SWIFTC') {
+              toast('缺少 Xcode 命令行工具：请在终端执行 xcode-select --install，完成后重新检测。', 'err', 9000);
             } else {
               toast(`OCR 检测失败：${res.error || res.code}`, 'err', 8000);
             }

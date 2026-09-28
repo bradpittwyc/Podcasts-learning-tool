@@ -9,8 +9,11 @@ on:
 
 jobs:
   test:
-    name: 自检（Windows）
-    runs-on: windows-latest
+    name: 自检
+    strategy:
+      matrix:
+        os: [windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -64,14 +67,58 @@ jobs:
             release/*.blockmap
           if-no-files-found: error
 
-      # 注意：CI 构建**不含**内嵌试用 Key（src/main/default-key.js 被 .gitignore 排除），
-      # 所以 CI 出的便携版需要用户自己填 Key；带 Key 的试用包只在本地构建。
+      # 注意：构建产物不含任何出厂 Key —— 使用者需在「设置 → 大模型」里填自己的 Key。
       - name: 附加到 Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
           files: |
             release/*.exe
+            release/*.yml
+            release/*.blockmap
+          draft: false
+          generate_release_notes: true
+
+  package-mac:
+    name: 打包（macOS dmg + zip）
+    needs: test
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+      - run: npm ci
+
+      - name: 生成 icns 图标
+        run: npm run icons:mac
+
+      # 双架构：arm64 (Apple Silicon) + x64 (Intel)，产物各自带架构后缀
+      - name: 构建 dmg 与 zip（x64 + arm64）
+        run: npx electron-builder --mac --publish never
+
+      - name: 产出清单
+        run: ls -la release
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PodcastsLearningTool-macos
+          path: |
+            release/*.dmg
+            release/*.zip
+            release/*.yml
+            release/*.blockmap
+          if-no-files-found: error
+
+      - name: 附加到 Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/*.dmg
+            release/*.zip
             release/*.yml
             release/*.blockmap
           draft: false

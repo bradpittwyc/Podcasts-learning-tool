@@ -39,7 +39,8 @@
     sessionStart: Date.now()
   };
 
-  let player = null;
+  let player = null;        // 播放后端门面（Playback）
+  let localPlayer = null;   // 本地 <video> 后端，只建一次
   let transcript = null;
   let lookup = null;
   let dictPanel = null;
@@ -60,11 +61,15 @@
     state.settings = await window.PLT.settings.get();
 
     // ── 播放器 ──
-    player = new window.PLTPlayer.Player($('#video'), {
+    // 门面模式：本地 <video> 与在线 YouTube 两个后端共用一套传输控件。
+    // 本地后端只创建一次（Player 会给 <video> 挂事件监听，重建会重复挂载）。
+    localPlayer = new window.PLTPlayer.Player($('#video'), {
       defaultRate: state.settings.player.rate,
       defaultVolume: state.settings.player.volume,
       muted: state.settings.player.muted
     });
+    player = new window.PLTPlayer.Playback();
+    player.use(localPlayer, 'local');
     window.PLTPlayer.bindTransport(player, { seekbar: $('#seekbar'), miniTime: $('#miniTime') });
     player.setLoopMode(state.settings.player.loopMode || 'none');
 
@@ -123,6 +128,7 @@
     applyTheme(await window.PLT.theme.resolve());
     paintPortable();
     initUpdater();
+    initYoutube();
     updateSubtitleButton();
 
     bindUi();
@@ -252,10 +258,10 @@
       })
     };
 
-    // 首次使用提示（不填 Key 也能用：本地词典覆盖绝大多数词）
+    // 首次使用提示（不填 Key 也能用：本地词典负责分级筛选，覆盖绝大多数词）
     if (!state.settings.llm.hasApiKey) {
       setTimeout(() => {
-        toast('未配置大模型 API Key：内置离线词典已可用（分级取词 / 扫描难词 / 点词查义均 0 费用）。只有生僻词需要 AI，可到 ⚙ 设置 → 大模型 填入。', 'warn', 9000);
+        toast('未配置大模型 API Key：内置离线词典已可用，分级取词 / 扫描难词 0 费用、可离线。点词看释义需要 AI，到 ⚙ 设置 → 大模型 填入你自己的 Key 即可。', 'warn', 9000);
       }, 1200);
     }
   }
@@ -296,6 +302,8 @@
 
   function paintPortable() {
     window.PLT.app.info().then((info) => {
+      // macOS / Windows 的外形差异（标题栏交通灯等）全靠这个属性做 CSS 分支
+      document.body.dataset.platform = info.platform || '';
       $('#sbPortable').textContent = info.portable ? `便携模式 · ${info.version}` : `v${info.version}`;
       $('#sbPortable').title = info.dataDir;
       // 标题栏与窗口标题都带版本号，方便一眼确认当前跑的是哪版
@@ -376,6 +384,7 @@
     $('#btnOpenMedia').addEventListener('click', () => openMediaDialog());
     $('#btnOpenSub').addEventListener('click', () => subtitleMenu());
     $('#btnOpenFolder').addEventListener('click', () => openFolderDialog());
+    $('#btnLink').addEventListener('click', () => window.PLTYoutube.openLink());
     $('#dzOpen').addEventListener('click', () => openMediaDialog());
     $('#dzSub').addEventListener('click', () => openSubtitleDialog());
     $('#dzFolder').addEventListener('click', () => openFolderDialog());
@@ -865,6 +874,59 @@
     lastCueIndex = -2;
     updateSubtitleButton();
     if (reason) toast(reason + '。可点「字幕」按钮选择字幕或导入字幕文件。', 'warn', 5600);
+  }
+
+  // ══════════════════════════════════════════════════════════
+  // 在线视频（YouTube）
+  // ══════════════════════════════════════════════════════════
+
+  /** 进入在线模式：清掉字幕（拿不到文本）、切舞台样式、状态栏标注来源 */
+  function enterOnlineMode(info) {
+    clearSubtitle(null);
+    const stage = $('#stage');
+    stage.classList.remove('has-media', 'has-audio');
+    stage.classList.add('has-online');
+    const sbFile = $('#sbFile');
+    if (sbFile) {
+      sbFile.textContent = info && info.title ? info.title : '在线视频';
+      sbFile.title = (info && info.url) || '';
+    }
+    state.media = null;
+    toast('在线播放模式：倍速与 A-B 复读可用；字幕文本拿不到，需要点句跳转 / 跟读 / 取词请改用「下载到本地」', 'warn', 8000);
+  }
+
+  function exitOnlineMode() {
+    $('#stage').classList.remove('has-online');
+  }
+
+  function initYoutube() {
+    if (!window.PLTYoutube) return;
+    window.PLTYoutube.init({
+      playback: () => player,
+      localBackend: () => localPlayer,
+      getSettings: () => state.settings,
+      onEnterOnline: enterOnlineMode,
+      onExitOnline: exitOnlineMode,
+      openLocal: async (filePath) => {
+        const info = await window.PLT.file.describe(filePath);
+        if (!info || info.error) { toast('下载的文件打不开：' + ((info && info.error) || filePath), 'err', 6000); return; }
+        await loadMedia(info);
+      },
+      openSubtitle: async (filePath) => {
+        await openSubtitlePaths([filePath], { silent: true });
+      }
+    });
+
+    // 直接 Ctrl+V：剪贴板里是视频链接就顺势接上（在输入框 / 校对区里粘贴不拦）
+    document.addEventListener('paste', (e) => {
+      const t = e.target;
+      if (t && t.closest && t.closest('input, textarea, [contenteditable="true"]')) return;
+      if (document.getElementById('modalHost') && !document.getElementById('modalHost').classList.contains('hidden')) return;
+      const text = (e.clipboardData && e.clipboardData.getData('text')) || '';
+      if (!/youtube|youtu\.be/i.test(text)) return;
+      e.preventDefault();
+      window.PLTYoutube.openLink(text.trim());
+    });
   }
 
   async function openSubtitleDialog() {
@@ -1575,8 +1637,11 @@
         if (e.key === 'Escape' && transcript.editing) { transcript.setEditing(false); }
         return;
       }
-      const ctrl = e.ctrlKey || e.metaKey;
+      const ctrlOrCmd = e.ctrlKey || e.metaKey;
       const key = e.key;
+      // macOS 上 ⌘H 是系统「隐藏窗口」，撞车时只认 ⌃H（菜单项同样做了映射）
+      const macHideConflict = document.body.dataset.platform === 'darwin' && e.metaKey && String(key).toLowerCase() === 'h';
+      const ctrl = ctrlOrCmd && !macHideConflict;
 
       if (ctrl && key === ',') { e.preventDefault(); settingsPanel.open(); return; }
       if (ctrl && key.toLowerCase() === 'o' && e.shiftKey) { e.preventDefault(); openSubtitleDialog(); return; }
@@ -1690,7 +1755,9 @@
       'theme-system': () => setTheme('system'),
       'theme-light': () => setTheme('light'),
       'theme-dark': () => setTheme('dark'),
-      about: () => about()
+      about: () => about(),
+      // macOS 应用菜单「设置…」（Cmd+,）走的这条
+      'open-settings': () => settingsPanel.open()
     };
     const fn = map[action];
     if (fn) fn();

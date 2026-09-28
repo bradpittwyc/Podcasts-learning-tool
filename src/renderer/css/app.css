@@ -165,6 +165,15 @@ body.is-playing #miniPlay .ic-pause { visibility: visible; }
 .wco-btn svg { width: 10px; height: 10px; }
 .wco-btn:hover { background: var(--bg-hover); }
 .wco-btn:active { background: var(--bg-press); }
+
+/* ── macOS 外形修正 ──
+   body[data-platform="darwin"] 由主进程 app:info 返回后打上。
+   1) 隐藏自绘的最小化/最大化/关闭三键 —— macOS 用左上角原生交通灯
+   2) 标题栏左侧让出 76px，避免 App 图标和菜单被交通灯压住
+   3) 右侧留出一点收边，视觉上与原生窗口的 4px 圆角对齐 */
+body[data-platform="darwin"] .wco { display: none; }
+body[data-platform="darwin"] .titlebar { padding-left: 78px; }
+body[data-platform="darwin"] .titlebar-right { padding-right: 4px; }
 .wco-close:hover { background: #c42b1c; color: #fff; }
 .wco-close:active { background: #b3261a; color: #fff; }
 

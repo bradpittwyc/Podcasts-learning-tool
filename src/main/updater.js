@@ -13,7 +13,13 @@
  *                     · 下载 Portable exe 到 PodcastsLearningData\update\
  *                     · 生成一个 PowerShell 换包脚本：等本进程退出 → 覆盖 exe → 重新拉起
  *                       （便携版的 exe 是自解压外壳，运行期间文件被占用，
- *                         所以只能"退出后再换"，脚本用重试循环兜住外壳退出的时间差）
+ *                         所以只能“退出后再换”，脚本用重试循环兜住外壳退出的时间差）
+ *
+ *   macOS          → 自研换包（第三条路，与便携版同源不同实现）
+ *                     · latest-mac.yml / GitHub API 拿版本与 zip 资产（按 CPU 架构选 arm64/x64）
+ *                     · 下载 zip → ditto 解包出 .app
+ *                     · 写一个 sh 脚本：等本进程退出 → rm -rf 旧包 → cp -R 新包 → open
+ *                       （/Applications 不可写时降级为“打开 Finder 手动拖入”）
  *
  * 约定：所有状态都通过 emit() 推给渲染进程，UI 只认 state.phase。
  */
@@ -23,11 +29,14 @@ const path = require('path');
 const https = require('https');
 const { app, shell, dialog } = require('electron');
 const store = require('./store');
+const platform = require('./platform');
 
 const REPO = { owner: 'bradpittwyc', repo: 'Podcasts-learning-tool' };
 const REPO_URL = `https://github.com/${REPO.owner}/${REPO.repo}`;
 const RELEASE_PAGE = `${REPO_URL}/releases/latest`;
 const PORTABLE_ASSET_RE = /Portable.*\.exe$/i;
+const MAC_ASSET_RE = new RegExp(`Podcasts-Learning-Tool-[\\d.]+-${platform.assetArch()}\\.zip$`, 'i');
+const MAC_ASSET_ANY_RE = /Podcasts-Learning-Tool-[\d.]+-(arm64|x64)\.zip$/i;
 
 let send = () => {};
 let autoUpdater = null;
@@ -66,6 +75,7 @@ function getState() { return Object.assign({}, state); }
 /** 便携版：exe 在用户手上，不在 asar 里 */
 function updaterMode() {
   if (!app.isPackaged) return 'none';
+  if (platform.IS_MAC) return 'mac';
   if (store.isPortable() || process.env.PORTABLE_EXECUTABLE_DIR) return 'portable';
   return 'installer';
 }
@@ -85,7 +95,7 @@ function cleanupUpdateDir() {
   try {
     for (const name of fs.readdirSync(dir)) {
       if (name === 'update.log') continue;
-      if (!/\.(exe|part|tmp)$/i.test(name)) continue;
+      if (!/\.(exe|zip|part|tmp)$/i.test(name)) continue;
       try { fs.unlinkSync(path.join(dir, name)); removed++; } catch (_) { /* 正在被占用就留着 */ }
     }
   } catch (_) { /* ignore */ }
@@ -366,6 +376,150 @@ Remove-Item -LiteralPath $MyInvocation.MyCommand.Path -Force
 }
 
 // ─────────────────────────────────────────────────────────────
+// macOS：查 Release → 下载 zip → 替换 .app
+// ─────────────────────────────────────────────────────────────
+/**
+ * 与便携版同源的「查最新版」逻辑，但资产是按 CPU 架构命名的 zip：
+ *   Podcasts-Learning-Tool-<version>-arm64.zip / -x64.zip
+ * 优先 latest-mac.yml（electron-builder 发布 mac 目标时自动生成，零 API 额度），
+ * 兜底走 GitHub API。
+ */
+async function macLatest() {
+  const errors = [];
+  const arch = platform.assetArch();
+  try {
+    const yml = await fetchText(releaseAssetUrl('latest-mac.yml'));
+    const version = (yml.match(/^version:\s*(.+)$/m) || [])[1];
+    if (version) {
+      const v = version.trim().replace(/^v/i, '');
+      const candidates = [
+        `Podcasts-Learning-Tool-${v}-${arch}.zip`,
+        `Podcasts-Learning-Tool-${v}.zip`
+      ];
+      for (const name of candidates) {
+        try {
+          const head = await headRequest(releaseAssetUrl(name));
+          if (head.status === 200 || head.status === 302) {
+            return {
+              version: v,
+              tag: `v${v}`,
+              notes: '',
+              url: `${REPO_URL}/releases/tag/v${v}`,
+              assetName: name,
+              assetUrl: releaseAssetUrl(name),
+              assetSize: head.size,
+              via: 'latest-mac.yml'
+            };
+          }
+        } catch (e) { errors.push(name + ': ' + e.message); }
+      }
+    }
+  } catch (e) { errors.push('latest-mac.yml: ' + e.message); }
+
+  const rel = await fetchJSON(`https://api.github.com/repos/${REPO.owner}/${REPO.repo}/releases/latest`);
+  const tag = String(rel.tag_name || rel.name || '').trim();
+  const version = tag.replace(/^v/i, '');
+  const assets = Array.isArray(rel.assets) ? rel.assets : [];
+  const asset = assets.find((a) => MAC_ASSET_RE.test(a.name || ''))
+    || assets.find((a) => MAC_ASSET_ANY_RE.test(a.name || ''))
+    || assets.find((a) => /\.zip$/i.test(a.name || ''));
+  return {
+    version,
+    tag,
+    notes: rel.body || '',
+    url: rel.html_url || RELEASE_PAGE,
+    assetName: asset ? asset.name : '',
+    assetUrl: asset ? asset.browser_download_url : '',
+    assetSize: asset ? asset.size : 0,
+    publishedAt: rel.published_at || '',
+    via: 'api'
+  };
+}
+
+/** 当前运行的 .app bundle 路径（开发模式下为 null，不支持换包） */
+function appBundle() {
+  return platform.appBundlePath(app);
+}
+
+/**
+ * 生成 macOS 换包脚本：等本进程退出 → rm 旧包 → cp 新包 → open 重启 → 自删。
+ * @param privileged true 时用 osascript 管理员提权（/Applications 不可写的场景）
+ */
+function writeMacSwapScript(srcApp, dstApp, pid, workDir, privileged) {
+  const sh = (s) => '"' + String(s).replace(/(["\\$`])/g, '\\$1') + '"';
+  const log = path.join(workDir, 'update.log');
+  const script = `#!/bin/bash
+# 由 Podcasts Learning Tool 自动生成：退出后替换 .app 并重启
+LOG=${sh(log)}
+log() { echo "[$(date +%H:%M:%S)] $1" >> "$LOG"; }
+log "等待主进程退出 (PID ${pid})"
+while kill -0 ${pid} 2>/dev/null; do sleep 0.4; done
+log "主进程已退出，开始替换"
+${privileged ? `osascript -e 'do shell script "rm -rf ${sh(dstApp).replace(/'/g, String.fromCharCode(39, 39, 39, 39))} && cp -R ${sh(srcApp).replace(/'/g, String.fromCharCode(39, 39, 39, 39))} ${sh(dstApp).replace(/'/g, String.fromCharCode(39, 39, 39, 39))}" with administrator privileges' >> "$LOG" 2>&1 || { log "提权替换失败"; exit 1; }` : `rm -rf ${sh(dstApp)} || { log "删除旧包失败"; exit 1; }
+cp -R ${sh(srcApp)} ${sh(dstApp)} || { log "拷贝新包失败"; exit 1; }
+xattr -dr com.apple.quarantine ${sh(dstApp)} 2>/dev/null || true`}
+log "替换完成，重新启动"
+open ${sh(dstApp)}
+rm -f "$0"
+`;
+  const file = path.join(workDir, 'apply-update.sh');
+  fs.writeFileSync(file, script, { encoding: 'utf8', mode: 0o755 });
+  try { fs.chmodSync(file, 0o755); } catch (_) { /* ignore */ }
+  return file;
+}
+
+/** macOS：解包 zip → 写换包脚本 → 退出，由脚本完成替换 + 重启 */
+async function installMac() {
+  const zip = state.savedTo;
+  if (!zip || !fs.existsSync(zip)) return { ok: false, error: '更新包还没下载完' };
+  const bundle = appBundle();
+  if (!bundle || path.extname(bundle) !== '.app') {
+    return { ok: false, error: '当前不是从 .app 运行（开发模式不支持换包），请手动安装新包' };
+  }
+  const dir = path.dirname(zip);
+  const logFile = path.join(dir, 'update.log');
+  try { fs.unlinkSync(logFile); } catch (_) { /* ignore */ }
+
+  emit({ phase: 'installing', percent: 100, error: '' });
+
+  // ditto 是 macOS 标准解包工具（比 unzip 更好地保留元数据/签名属性）
+  const stage = path.join(dir, `staged-${process.pid}`);
+  try { fs.rmSync(stage, { recursive: true, force: true }); fs.mkdirSync(stage, { recursive: true }); } catch (err) {
+    return { ok: false, error: '准备暂存目录失败：' + err.message };
+  }
+  try {
+    const { execFileSync } = require('child_process');
+    execFileSync('/usr/bin/ditto', ['-x', '-k', zip, stage], { timeout: 180000, stdio: 'pipe' });
+  } catch (err) {
+    return { ok: false, error: '解压更新包失败：' + (err.message || err) };
+  }
+  let appName;
+  try { appName = fs.readdirSync(stage).find((n) => n.endsWith('.app')); } catch (_) { /* ignore */ }
+  if (!appName) return { ok: false, error: '更新包里没有找到 .app' };
+
+  const src = path.join(stage, appName);
+  // /Applications 一般对 admin 用户可写；不可写（比如由别人装进系统目录）就提权弹窗
+  let privileged = false;
+  try {
+    fs.accessSync(path.dirname(bundle), fs.constants.W_OK);
+    fs.accessSync(bundle, fs.constants.W_OK);
+  } catch (_) { privileged = true; }
+
+  const sh = writeMacSwapScript(src, bundle, process.pid, dir, privileged);
+  const res = await spawnDetached('/bin/bash', [sh]);
+  if (!res.ok) {
+    emit({ phase: 'downloaded', error: '替换脚本没能启动，可手动把下载的 zip 里的 .app 拖进「应用程序」覆盖' });
+    return { ok: false, error: '替换脚本没能启动：' + (res.error || '') };
+  }
+  if (!(await waitForScriptReady(logFile, 5000))) {
+    emit({ phase: 'downloaded', error: '替换脚本未能就位，可手动把 zip 里的 .app 拖进「应用程序」覆盖' });
+    return { ok: false, error: '替换脚本未能就位' };
+  }
+  setTimeout(() => app.quit(), 400);
+  return { ok: true, bundle, src, script: sh, privileged };
+}
+
+// ─────────────────────────────────────────────────────────────
 // 对外 API
 // ─────────────────────────────────────────────────────────────
 async function check({ silent, force } = {}) {
@@ -377,8 +531,8 @@ async function check({ silent, force } = {}) {
   const mode = (!app.isPackaged && force) ? 'portable' : updaterMode();
   emit({ phase: 'checking', mode, error: '', current: app.getVersion(), lastCheck: Date.now() });
   try {
-    if (mode === 'portable') {
-      const info = await portableLatest();
+    if (mode === 'portable' || mode === 'mac') {
+      const info = mode === 'mac' ? await macLatest() : await portableLatest();
       const cmp = compareVersion(info.version, app.getVersion());
       // forceUpdate() 是本地演练开关：即使已经是最新（甚至比线上还新）也当成可升级，
       // 用来在不上线新版本的情况下，完整跑一遍「下载 → 换包 → 重启」
@@ -423,10 +577,11 @@ async function download() {
     }
     return getState();
   }
-  if (mode !== 'portable') return emit({ phase: 'unsupported', error: '当前方式不支持自动更新' });
-  if (!state.assetUrl) return emit({ phase: 'error', error: '没有可下载的便携版安装包' });
+  if (mode !== 'portable' && mode !== 'mac') return emit({ phase: 'unsupported', error: '当前方式不支持自动更新' });
+  if (!state.assetUrl) return emit({ phase: 'error', error: mode === 'mac' ? '没有可下载的 macOS 更新包' : '没有可下载的便携版安装包' });
 
-  const dest = path.join(updateDir(), state.assetName || 'Podcasts-Learning-Tool-Portable.exe');
+  const fallback = mode === 'mac' ? `Podcasts-Learning-Tool-${state.latest || app.getVersion()}-${platform.assetArch()}.zip` : 'Podcasts-Learning-Tool-Portable.exe';
+  const dest = path.join(updateDir(), state.assetName || fallback);
   try {
     emit({ phase: 'downloading', percent: 0, savedTo: dest, error: '' });
     let lastTick = 0;
@@ -521,6 +676,7 @@ async function installPortable() {
 
 async function install() {
   const mode = updaterMode();
+  if (mode === 'mac') return await installMac();
   if (mode === 'portable') return await installPortable();
   if (mode === 'installer') {
     emit({ phase: 'installing' });
@@ -568,6 +724,8 @@ module.exports = {
   updaterMode,
   compareVersion,
   writeSwapScript,
+  writeMacSwapScript,
+  macLatest,
   cleanupUpdateDir,
   REPO,
   RELEASE_PAGE

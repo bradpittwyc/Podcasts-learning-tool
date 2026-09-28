@@ -207,6 +207,7 @@ const required = [
   'src/renderer/index.html', 'src/renderer/quick.html',
   'src/renderer/js/app.js', 'src/renderer/js/util.js', 'src/renderer/js/subtitles.js', 'src/renderer/js/player.js',
   'src/renderer/js/transcript.js', 'src/renderer/js/dict.js', 'src/renderer/js/shadow.js', 'src/renderer/js/settings.js',
+  'src/renderer/js/ytplayer.js', 'src/renderer/js/youtube.js', 'src/shared/youtube-url.js', 'src/main/youtube.js',
   'src/renderer/css/tokens.css', 'src/renderer/css/app.css', 'src/renderer/css/player.css',
   'src/renderer/css/transcript.css', 'src/renderer/css/panels.css'
 ];
@@ -222,18 +223,47 @@ for (const f of rendererScripts) {
   try { new Function(src); ok(`语法 ${f}`, true); }
   catch (err) { ok(`语法 ${f}`, false, err.message); }
 }
-for (const f of ['main.js', 'store.js', 'llm.js', 'ocr.js', 'screen-text.js']) {
+for (const f of ['main.js', 'store.js', 'llm.js', 'ocr.js', 'screen-text.js', 'youtube.js', 'updater.js']) {
   const src = fs.readFileSync(path.join(ROOT, 'src', 'main', f), 'utf8');
   try { new Function(src); ok(`语法 main/${f}`, true); }
   catch (err) { ok(`语法 main/${f}`, false, err.message); }
 }
+for (const f of ['lemma.js', 'youtube-url.js']) {
+  const src = fs.readFileSync(path.join(ROOT, 'src', 'shared', f), 'utf8');
+  try { new Function(src); ok(`语法 shared/${f}`, true); }
+  catch (err) { ok(`语法 shared/${f}`, false, err.message); }
+}
+
+console.log('\n=== 12b. YouTube 链接解析 ===');
+const ytUrl = require(path.join(ROOT, 'src', 'shared', 'youtube-url.js'));
+const ID = 'dQw4w9WgXcQ';
+for (const [input, expect] of [
+  ['https://www.youtube.com/watch?v=' + ID, ID],
+  ['https://www.youtube.com/watch?v=' + ID + '&t=90', ID],
+  ['https://youtu.be/' + ID, ID],
+  ['https://www.youtube.com/shorts/' + ID, ID],
+  ['https://www.youtube.com/live/' + ID, ID],
+  ['https://www.youtube.com/embed/' + ID, ID],
+  ['https://m.youtube.com/watch?v=' + ID, ID],
+  ['https://music.youtube.com/watch?v=' + ID, ID],
+  [ID, ID]
+]) {
+  const r = ytUrl.parseUrl(input);
+  ok(`解析 ${input.slice(0, 46)}`, !!r && r.id === expect, r ? r.id : 'null');
+}
+for (const bad of ['', 'https://www.bilibili.com/video/BV1xx', 'https://www.youtube.com/watch?v=short', 'https://vimeo.com/12345', '随便一段文字']) {
+  ok(`拒绝非 YouTube 输入：${bad.slice(0, 34) || '(空)'}`, ytUrl.parseUrl(bad) === null);
+}
+ok('t 参数解析（1m30s → 90）', ytUrl.parseUrl('https://youtu.be/' + ID + '?t=1m30s').start === 90);
+ok('t 参数解析（裸秒数）', ytUrl.parseUrl('https://youtu.be/' + ID + '?t=42').start === 42);
+ok('playlist 参数保留', ytUrl.parseUrl('https://www.youtube.com/watch?v=' + ID + '&list=PL123').list === 'PL123');
 
 console.log('\n=== 13. HTML 结构 ===');
 const html = fs.readFileSync(path.join(ROOT, 'src', 'renderer', 'index.html'), 'utf8');
-for (const id of ['video', 'transcript', 'dictPanel', 'levelSelect', 'seekbar', 'ratePresets', 'subtitleOverlay', 'shadowPanel', 'ocrOverlay', 'modalHost', 'vocabList']) {
+for (const id of ['video', 'transcript', 'dictPanel', 'levelSelect', 'seekbar', 'ratePresets', 'subtitleOverlay', 'shadowPanel', 'ocrOverlay', 'modalHost', 'vocabList', 'ytHost', 'btnLink']) {
   ok(`index.html 含 #${id}`, html.includes(`id="${id}"`));
 }
-const scriptOrder = ['js/util.js', 'js/subtitles.js', 'js/player.js', 'js/transcript.js', 'js/dict.js', 'js/shadow.js', 'js/settings.js', 'js/app.js'];
+const scriptOrder = ['js/util.js', 'js/subtitles.js', 'js/player.js', 'js/ytplayer.js', 'js/youtube.js', 'js/transcript.js', 'js/dict.js', 'js/shadow.js', 'js/settings.js', 'js/app.js'];
 let lastIdx = -1;
 let orderOk = true;
 for (const s of scriptOrder) {
@@ -253,6 +283,40 @@ ok('含 nsis 安装包目标', targets.includes('nsis'));
 ok('含 portable 便携目标', targets.includes('portable'));
 ok('portable 有独立文件名', !!pkg.build.portable.artifactName);
 ok('图标存在且被引用', pkg.build.win.icon === 'build/icon.ico' && fs.existsSync(path.join(ROOT, 'build/icon.ico')));
+
+// ── macOS 打包配置（与 Windows 并列）──
+const macTargets = (pkg.build.mac && pkg.build.mac.target) || [];
+const macTargetNames = macTargets.map((t) => t.target);
+const macArch = new Set(macTargets.flatMap((t) => t.arch || []));
+ok('mac 含 dmg 目标', macTargetNames.includes('dmg'));
+ok('mac 含 zip 目标', macTargetNames.includes('zip'));
+ok('mac 双架构 arm64', macArch.has('arm64'));
+ok('mac 双架构 x64', macArch.has('x64'));
+ok('mac 图标 icns 存在且引用', pkg.build.mac && pkg.build.mac.icon === 'build/icon.icns' && fs.existsSync(path.join(ROOT, 'build/icon.icns')));
+ok('mac 未设开发者签名(identity:null)', pkg.build.mac && pkg.build.mac.identity === null);
+const dmgContents = (pkg.build.dmg && pkg.build.dmg.contents) || [];
+ok('dmg 含 /Applications 拖拽链接', dmgContents.some((c) => c.type === 'link' && c.path === '/Applications'));
+const macExtra = (pkg.build.mac && pkg.build.mac.extraResources) || [];
+ok('mac 打包 Swift 辅助程序', macExtra.some((e) => e.from === 'helper/plt-macos.swift'));
+
+console.log('\n=== 15. 平台抽象模块 ===');
+const plt = require(path.join(ROOT, 'src', 'main', 'platform.js'));
+const needKeys = ['PLATFORM', 'IS_WIN', 'IS_MAC', 'IS_LINUX', 'menuAccel', 'menuLabel', 'appBundlePath', 'portableRoot', 'assetArch', 'ocrEngineName', 'supportsBackdropMaterial'];
+ok('platform 导出齐全', needKeys.every((k) => k in plt), needKeys.filter((k) => !(k in plt)).join(','));
+ok('IS_MAC 与当前平台一致', plt.IS_MAC === (process.platform === 'darwin'));
+ok('IS_WIN 与当前平台一致', plt.IS_WIN === (process.platform === 'win32'));
+ok('assetArch 落在已知架构', ['arm64', 'x64'].includes(plt.assetArch()), plt.assetArch());
+ok('支持原生背景材质仅 Windows', plt.supportsBackdropMaterial() === plt.IS_WIN);
+if (plt.IS_MAC) {
+  ok('mac 菜单标签剥离助记符 (&F)', plt.menuLabel('打开(&O)') === '打开');
+  ok('mac 快捷键 CmdOrCtrl+H 改 Ctrl+H', plt.menuAccel('CmdOrCtrl+H') === 'Ctrl+H');
+  ok('mac OCR 引擎为 Vision', plt.ocrEngineName() === 'macOS Vision');
+  ok('mac 非便携(exe 不可写)时 portableRoot=null', plt.portableRoot({ getPath: () => '/nonexistent/exe', getAppPath: () => __dirname }) === null);
+}
+if (plt.IS_WIN) {
+  ok('win 菜单标签保留助记符', plt.menuLabel('打开(&O)') === '打开(&O)');
+  ok('win OCR 引擎为 Windows.Media.Ocr', plt.ocrEngineName() === 'Windows.Media.Ocr');
+}
 
 console.log(`\n${'='.repeat(52)}`);
 console.log(`自检结果：${pass} 通过 / ${fail} 失败`);

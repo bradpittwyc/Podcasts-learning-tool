@@ -1,7 +1,7 @@
 {
   "name": "podcasts-learning-tool",
   "productName": "Podcasts Learning Tool",
-  "version": "1.1.6",
+  "version": "1.3.0",
   "description": "英语学习神器 — 播放 MP4/MP3 与播客/视频字幕跟读，点击文字跳转时间戳，大模型分级取词查词典（雅思/托福/GRE/母语级）。",
   "main": "src/main/main.js",
   "author": {
@@ -26,12 +26,17 @@
     "dist:portable": "electron-builder --win portable --publish never",
     "dist:installer": "electron-builder --win nsis --publish never",
     "dist:dir": "electron-builder --win --dir --publish never",
+    "dist:mac": "electron-builder --mac --publish never && npm run sign:mac",
+    "dist:mac:dir": "electron-builder --mac dir --publish never && npm run sign:mac",
+    "dist:mac:arm": "electron-builder --mac --arm64 --publish never && npm run sign:mac",
+    "sign:mac": "node scripts/sign-mac.js",
     "test": "node scripts/selftest.js",
     "test:update": "node scripts/update-selftest.js",
     "test:all": "node scripts/selftest.js && node scripts/update-selftest.js && node scripts/ocr-selftest.js",
     "test:ocr": "node scripts/ocr-selftest.js",
     "sample": "node scripts/make-sample.js",
     "icon": "node scripts/make-icon.js",
+    "icons:mac": "node scripts/make-icon-mac.js",
     "dict": "node scripts/build-dict.js",
     "dict:fetch": "node scripts/build-dict.js --fetch",
     "fix-bom": "node scripts/fix-ps1-bom.js"
@@ -99,6 +104,34 @@
       "artifactName": "${productName}-Portable-${version}.${ext}",
       "requestExecutionLevel": "user",
       "unpackDirName": "PodcastsLearningTool"
+    },
+    "mac": {
+      "target": [
+        { "target": "dmg", "arch": ["x64", "arm64"] },
+        { "target": "zip", "arch": ["x64", "arm64"] }
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.education",
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "identity": null,
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "extendInfo": {
+        "NSMicrophoneUsageDescription": "跟读练习需要使用麦克风录制你的发音，用于 A/B 对比与回放。录音仅保存在本机。",
+        "NSAppleEventsUsageDescription": "用于调用系统脚本实现自动更新与屏幕取词辅助功能。",
+        "NSHumanReadableCopyright": "Copyright © 2025 bradpittwyc"
+      },
+      "extraResources": [
+        { "from": "helper/plt-macos.swift", "to": "plt-macos.swift" }
+      ]
+    },
+    "dmg": {
+      "artifactName": "${productName}-${version}-${arch}.${ext}",
+      "title": "${productName} ${version}",
+      "contents": [
+        { "x": 130, "y": 220 },
+        { "x": 410, "y": 220, "type": "link", "path": "/Applications" }
+      ]
     },
     "compression": "maximum",
     "asar": true,

@@ -1,10 +1,10 @@
 # Podcasts Learning Tool · 英语学习神器
 
 > 播放 MP4 / MP3 与播客、视频字幕跟读，点击文字跳转时间戳，**大模型分级取词查词典**（雅思 / 托福 / GRE / 受过良好教育的母语级）。
-> Windows 11 风格界面（Fluent / Mica / 亚克力），提供**安装版**与**绿色便携版**。
+> 提供 **Windows** 与 **macOS** 双平台版本，界面贴合各自系统原生风格，功能完全一致。
 
 [![Electron](https://img.shields.io/badge/Electron-33-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
-[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11-0078D4?logo=windows)](https://www.microsoft.com/windows)
+[![Platform](https://img.shields.io/badge/Platform-Windows%2010%2F11%20%7C%20macOS-0078D4?logo=windows)](https://www.microsoft.com/windows)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
 
 ---
@@ -14,6 +14,7 @@
 | 模块 | 能力 |
 | --- | --- |
 | **播放器** | MP4 / MP3 / M4A / WAV / MKV / MOV / FLAC…（Chromium 支持的格式） |
+| **视频链接** | 粘贴 YouTube 链接 → 选「在线速听」或「下载到本地（全功能）」 |
 | **变速** | 慢速 **0.75× / 0.5× / 0.25×**，加速最高 **2.5×**，变速不变调（preservesPitch） |
 | **字幕** | 导入 + 自动配对 SRT / VTT / ASS / SSA / LRC / JSON / TXT（无时间轴也能自动断句） |
 | **字幕选择** | 「字幕」按钮下拉：从**同目录 / 导入的文件夹**里挑字幕（含子目录、标出同名字幕）、关闭或恢复字幕显示、打开其他文件、清除字幕 |
@@ -37,12 +38,34 @@
 
 到 [Releases](https://github.com/bradpittwyc/Podcasts-learning-tool/releases/latest) 下载：
 
+**Windows**（自 v1.1.6 起）
+
 | 文件 | 说明 |
 | --- | --- |
-| [**Podcasts Learning Tool-Portable-1.0.0.exe**](https://github.com/bradpittwyc/Podcasts-learning-tool/releases/download/v1.0.0/Podcasts.Learning.Tool-Portable-1.0.0.exe) | **便携版**：双击即运行，数据存于 exe 同目录 `PodcastsLearningData\`，U 盘即插即用 |
-| [Podcasts Learning Tool-Setup-1.0.0.exe](https://github.com/bradpittwyc/Podcasts-learning-tool/releases/download/v1.0.0/Podcasts.Learning.Tool-Setup-1.0.0.exe) | 安装版：开始菜单 + 桌面快捷方式，数据存于 `%APPDATA%` |
+| **Podcasts-Learning-Tool-Portable-`<版本>`.exe** | **便携版**：双击即运行，数据存于 exe 同目录 `PodcastsLearningData\`，U 盘即插即用 |
+| **Podcasts-Learning-Tool-Setup-`<版本>`.exe** | 安装版：开始菜单 + 桌面快捷方式，数据存于 `%APPDATA%` |
 
-> 未签名程序首次运行可能被 SmartScreen 拦截，点「更多信息 → 仍要运行」即可。
+**macOS**（自 **v1.3.0** 起，提供 Apple Silicon 与 Intel 双架构）
+
+| 文件 | 说明 |
+| --- | --- |
+| **Podcasts Learning Tool-`<版本>`-arm64.dmg** / `.zip` | Apple Silicon（M1/M2/M3…） |
+| **Podcasts Learning Tool-`<版本>`-x64.dmg** / `.zip` | Intel Mac |
+| 把 `.app` 拖进「应用程序」即可；或解压 `.zip` 后直接打开 |
+
+> 想看其它版本或更新日志：[全部 Releases](https://github.com/bradpittwyc/Podcasts-learning-tool/releases)。
+> 源码里的版本号可能比这里新（例如刚合入功能、还没打 tag 发布），那种情况下以 Releases 里实际能下到的为准。
+> 未签名程序首次运行可能被 SmartScreen（Windows）/ Gatekeeper（macOS）拦截，见下方「常见问题 → macOS 打开提示已损坏」。
+
+### macOS 首次使用须知（权限与离线 OCR）
+
+- **屏幕取词 / 划词**走 macOS 原生 **Vision OCR**（通过随包附带的 Swift 辅助程序 `plt-macos` 调用）：
+  - 首次使用会在本机**就地编译**这个 Swift 辅助程序（需要 **Xcode 命令行工具**：`xcode-select --install`），编译一次后缓存复用；没装 CLT 时这部分功能会提示不可用，不影响其它功能。
+  - 需在 **系统设置 → 隐私与安全性** 里授予：**屏幕录制**（截图 OCR 取画面）、**辅助功能**（抓取前台选中文字）。
+- **跟读录音**需授予**麦克风**权限。
+- 自动更新、屏幕取词辅助依赖 **Apple 事件**权限，首次触发时按系统提示允许即可。
+- 打包配置 `build.mac.identity` 为 `null`，electron-builder **不会**做开发者签名（它在钥匙串里查不到可用证书就直接跳过）；但 `npm run dist:mac` 会在打包后自动跑 `npm run sign:mac`，用系统自带 `codesign -s -` 给 `.app` 做 **ad-hoc 自签名**（已在本机验证：签名有效、`open` 可正常启动）。
+- ad-hoc 签名足以让**本机 / 右键「打开」/ 解除隔离属性**后正常运行；但它**不是公证（notarization）**，从互联网下载的 `.app` 仍会被 Gatekeeper 拦，直到右键「打开」或 `xattr -dr com.apple.quarantine`。要对外发布给陌生用户「双击即用」，需改为有效的 **Apple Developer ID 证书 + 公证**（把 `build.mac.identity` 设为你的证书名）。详见下方「常见问题 → macOS 打开提示已损坏」。
 
 ### 方式二：源码运行
 
@@ -51,7 +74,7 @@ git clone https://github.com/bradpittwyc/Podcasts-learning-tool.git
 cd Podcasts-learning-tool
 npm install
 npm start          # 启动
-npm test           # 跑自检（123+ 项：字幕解析/编码/分级逻辑/语法/结构）
+npm test           # 跑自检（175 项：字幕解析/编码/分级逻辑/链接解析/平台抽象/语法/结构）
 npm run dist       # 同时产出「安装版 + 便携版」到 release\
 npm run dist:portable   # 只出便携版
 ```
@@ -60,10 +83,10 @@ npm run dist:portable   # 只出便携版
 
 ---
 
-## 🔑 配置大模型（可选 — 已内置试用 Key）
+## 🔑 配置大模型（可选 — 不内置任何 Key）
 
-**开箱即用**：本仓库发布的可执行文件内嵌了一个试用 API Key，装完直接就能点选查词，无需任何配置。
-想用自己的额度，或想更稳定，按下面换成自己的 Key：
+**本应用不内置、不代管任何 API Key**，源码与构建产物里都没有明文 Key。
+Key 由使用者本人填写，或由你的上层平台（网站 / 后端账号体系）统一下发到所有产品 —— 播放器只是其中一个调用方。
 
 打开应用 → 右上角 **⚙ 设置 → 大模型**：
 
@@ -72,11 +95,10 @@ npm run dist:portable   # 只出便携版
 3. 点 **测试连接** —— 显示 `✓ 连接成功` 即可
 4. 也支持任何 **OpenAI 兼容**接口：OpenAI / Moonshot / 通义千问 / 智谱 / SiliconFlow，以及**本地 Ollama**（`http://localhost:11434/v1`，完全免费离线）
 
-> **Key 的优先级**：设置里自己填的 > 内置试用 Key。点「清除」则两者都不用（查词会提示需要 Key）。
+> **Key 只有一个来源**：设置里填的那一个。点「清除」即彻底不用（不会再回退到任何出厂 Key）。
 > **不配置 Key 也能用**：播放、字幕、校对、跟读、生词本、本地词典分级取词、全文难词扫描全部可用，
 > 只有点选查词的「释义」需要 Key。
-> API Key 使用 Windows DPAPI（Electron `safeStorage`）加密后保存在本地，绝不上传到本项目以外的任何地方。
-> 内置 Key 只写在**源码之外的构建产物**里（`src/main/default-key.js` 被 `.gitignore` 排除），公开仓库中不含明文 Key。
+> API Key 使用系统原生加密（Windows DPAPI / macOS Keychain，即 Electron `safeStorage`）保存在本地，绝不上传到本项目以外的任何地方。
 
 ---
 
@@ -94,6 +116,37 @@ npm run dist:portable   # 只出便携版
    - 按钮标签会显示当前字幕名（无字幕时提示跟随）
 
 > 关闭的是**视频上的字幕浮层**；右侧正文区仍然保留，方便「先盲听 → 再看文本 → 点句跳转核对」。
+
+---
+
+---
+
+## 🔗 打开视频链接（YouTube）
+
+工具栏点 **🔗 链接**（或直接 `Ctrl+V` 粘贴链接），粘进 YouTube 链接后，软件会问你走哪条路：
+
+| 方式 | 怎么用 | 能做什么 | 不能做什么 |
+| --- | --- | --- | --- |
+| **在线速听** | YouTube 官方嵌入播放器，秒开，不下载 | 播放 / 倍速（0.25×–2×）/ A-B 复读 / 全屏 | **拿不到字幕文本** → 点句跳转、全文扫描、分级取词、跟读都不可用 |
+| **下载到本地（全功能）** | 调 `yt-dlp` 把音视频 + 字幕抓到本机，之后当普通本地文件播放 | **全部功能照常**（点句跳转、变速不变调、字幕校对、跟读 A-B、分级取词） | 要等下载；需要 `yt-dlp` |
+
+### 支持哪些链接
+
+`youtube.com/watch?v=…` · `youtu.be/…` · `/shorts/…` · `/live/…` · `/embed/…` · 带 `list=` / `t=` 参数的链接 · 直接粘 11 位视频 ID
+
+### 关于 yt-dlp
+
+`yt-dlp` 体积大、更新频繁，**本应用不把它打进安装包** —— 第一次用「下载到本地」时会提示从
+[yt-dlp 官方发布页](https://github.com/yt-dlp/yt-dlp/releases/latest) 下载到本机数据目录 `PodcastsLearningData\tools\`。
+也可以自己装好后到 **⚙ 设置 → 高级** 里指定路径。
+
+- 装了 **ffmpeg** → 下载「视频 + 音频」合成 MP4
+- 没装 ffmpeg → 自动降级为**只下载音频**（字幕照样能下），对英语跟读来说通常够用
+- 字幕走 `--write-subs --write-auto-subs --sub-langs en.*`，下完自动挂上（英文自动字幕也能拿到）
+- 文件落在 `PodcastsLearningData\YouTube\<视频ID>\`
+
+> **合规提示**：下载功能由你自行决定是否使用，请遵守当地法律与 YouTube 服务条款，
+> 仅用于你有权使用的个人学习内容。本项目不提供任何绕过版权保护的能力。
 
 ---
 
@@ -189,15 +242,15 @@ npm run dist:portable   # 只出便携版
 
 三种方式，互为补充：
 
-1. **截图 OCR（默认，离线免费）**：按 `Ctrl+Shift+S` 或点工具栏「屏幕取词」→ 鼠标框选屏幕上的任意英文（YouTube 视频、Kindle、PDF、图片）→ **Windows 内置 OCR** 识别 → 大模型按当前级别挑出难词并给释义。
-   - 首次使用会弹出 Windows 的「屏幕录制权限」请求（用于截取屏幕画面，画面不会离开本机）。
-   - 若提示 OCR 引擎不可用：Windows 设置 → 时间和语言 → 语言和区域 → 添加「English (United States)」语言包（勾选**光学字符识别**组件）。设置 → 高级 → 「OCR 可用性检测」可一键验证。
-2. **抓取前台选中文字**：在浏览器/PDF 里选中英文 → 按全局快捷键 `Alt+Shift+W` → 弹出置顶浮窗显示难词释义（自动复制并还原你原来的剪贴板内容）。
-3. **应用内选中**：在右侧文字区选中任意文本 → `Ctrl+D`。
+1. **截图 OCR（默认，离线免费）**：按 `Ctrl+Shift+S`（macOS 上同 `Cmd+Shift+S`）或点工具栏「屏幕取词」→ 鼠标框选屏幕上的任意英文（YouTube 视频、Kindle、PDF、图片）→ 识别 → 大模型按当前级别挑出难词并给释义。
+   - **Windows**：走 **Windows 内置 OCR**（`Windows.Media.Ocr`）。首次会弹「屏幕录制权限」请求（画面不离开本机）；若提示 OCR 不可用，去 设置 → 时间和语言 → 语言和区域 → 添加「English (United States)」语言包并勾选**光学字符识别**组件，设置 → 高级 → 「OCR 可用性检测」可一键验证。
+   - **macOS**：走 **系统原生 Vision OCR**（通过随包附带的 Swift 辅助程序 `plt-macos` 调用，首次使用在本机编译一次）。需先在 **系统设置 → 隐私与安全性** 授予**屏幕录制**权限；没装 Xcode 命令行工具时这部分会提示不可用，不影响其它功能。
+2. **抓取前台选中文字**：在浏览器/PDF 里选中英文 → 按全局快捷键 `Alt+Shift+W`（macOS 上用 `Cmd+Shift+W`）→ 弹出置顶浮窗显示难词释义（自动复制并还原你原来的剪贴板内容）。macOS 走 `osascript` 复制选中内容，需授予**辅助功能**权限。
+3. **应用内选中**：在右侧文字区选中任意文本 → `Ctrl+D`（macOS `Cmd+D`）。
 
-> 技术说明：截图 OCR 走的是 Windows 自带的 `Windows.Media.Ocr` 引擎（通过 `scripts/ocr.ps1` 调用），
-> 完全离线、零 API 费用，也避免了把屏幕内容发给云端视觉模型。PowerShell 5.1 无法直接 await WinRT
-> 异步操作，脚本内用一段反射桥接（`AsTask<T>` + PowerShell 构造的封闭泛型接口）解决。
+> 技术说明：截图 OCR 在 Windows 上走系统自带的 `Windows.Media.Ocr` 引擎（通过 `scripts/ocr.ps1` 调用）；
+> 在 macOS 上走 **Vision** 框架（通过 `helper/plt-macos.swift` 编译出的辅助程序调用）。两者都**完全离线、零 API 费用**，
+> 也避免了把屏幕内容发给云端视觉模型。Windows 侧 PowerShell 5.1 无法直接 await WinRT 异步操作，脚本内用一段反射桥接（`AsTask<T>` + PowerShell 构造的封闭泛型接口）解决。
 
 ---
 
@@ -219,8 +272,9 @@ npm run dist:portable   # 只出便携版
 
 | 你用的是 | 升级方式 |
 | --- | --- |
-| **安装版**（Setup） | 启动后自动检查 → 一键下载 → **静默原地安装**并自动重启（设置、生词本全部保留） |
-| **便携版**（Portable） | 自动检查 + 下载 → 程序退出后由后台脚本**替换 exe 并重新拉起**（便携版 exe 运行期间被系统占用，只能退出后再换） |
+| **安装版**（Setup，Windows） | 启动后自动检查 → 一键下载 → **静默原地安装**并自动重启（设置、生词本全部保留） |
+| **便携版**（Portable，Windows） | 自动检查 + 下载 → 程序退出后由后台脚本**替换 exe 并重新拉起**（便携版 exe 运行期间被系统占用，只能退出后再换） |
+| **macOS（.app / .dmg / .zip）** | 自动检查 + 下载 → 退出后由后台脚本把新 `.app` 换进「应用程序」（或解压目录）；若「应用程序」不可写，会引导你在 Finder 里手动替换 |
 
 - 手动入口：**帮助 → 检查更新…**，或 **设置 → 高级 → 软件更新**
 - **只提示，不自动下载** —— 不会在你上课/听写时突然占满带宽
@@ -252,6 +306,7 @@ src/
     updater.js           自动更新：安装版走 electron-updater，便携版走自研换包脚本
     ocr.js               Windows.Media.Ocr 桥接（离线屏幕取词）
     screen-text.js       抓取前台程序选中文字（SendKeys + 剪贴板还原）
+    youtube.js           在线视频：yt-dlp 探测/安装、下载任务（进度 + 可取消）
   preload/preload.js     contextBridge 白名单 API
   renderer/
     index.html           主界面（标题栏 / 命令栏 / 播放区 / 文字区 / 状态栏）
@@ -259,7 +314,9 @@ src/
     css/                 tokens(设计标记) app player transcript panels
     js/
       subtitles.js       字幕引擎（主/渲染共用：SRT/VTT/ASS/LRC/JSON/TXT、编码嗅探、分词、词形还原）
-      player.js          播放器（0.25×~2.5×、A-B 复读、单句循环、画中画）
+      player.js          播放器（0.25×~2.5×、A-B 复读、单句循环、画中画）+ Playback 后端门面
+      ytplayer.js        YouTube 在线播放后端（IFrame API，接口与本地播放器一致）
+      youtube.js         链接流程：粘贴 → 取标题 → 选在线/下载 → 播放
       transcript.js      文字区（Times New Roman + 微软雅黑、点词查词、校对编辑）
       dict.js            查词面板、批量扫描、成本统计、截图 OCR 框选
       shadow.js          跟读录音与 A/B 对比
@@ -277,8 +334,9 @@ scripts/
   make-icon.js           纯 JS 生成多尺寸 ICO 图标
   make-sample.js         用 ffmpeg 生成示例媒体与中英字幕
   fix-ps1-bom.js         为 .ps1 补 UTF-8 BOM（PowerShell 5.1 必需）
-  selftest.js            无界面自检（字幕解析 / 编码 / 分级逻辑 / 语法 / 结构）
+  selftest.js            无界面自检（字幕解析 / 编码 / 分级逻辑 / 链接解析 / 语法 / 结构）
 src/shared/lemma.js      词形还原规则（构建词典与运行时共用）
+src/shared/youtube-url.js YouTube 链接解析（纯函数，主进程与自检共用同一份实现）
 resources/               内置离线词典（npm run dict 生成，不入库）
 ```
 
@@ -287,7 +345,7 @@ resources/               内置离线词典（npm run dict 生成，不入库）
 ## 🧪 自检与验证
 
 ```powershell
-npm test           # 129 项无界面自检
+npm test           # 175 项无界面自检
 npm run test:update # 18 项更新通路自检（版本比较 + 真跑一遍便携版换包脚本）
 npm run test:ocr   # 验证 Windows OCR 链路（生成图片→识别→校验文本）
 npm run dict:fetch # 下载 ECDICT 原始数据（63MB，仅首次）
@@ -298,7 +356,8 @@ npm run test:all   # 三套自检一次跑完
 ```
 
 `npm test` 覆盖：时间戳解析与格式化、双语拆分、SRT/VTT/ASS/LRC/JSON/纯文本解析、序列化往返、
-UTF-8/UTF-16/GBK 编码嗅探、正文分词与词形还原、级别分级判定、工程文件完整性、脚本语法与 HTML 结构。
+UTF-8/UTF-16/GBK 编码嗅探、正文分词与词形还原、级别分级判定、YouTube 链接解析（含 `t=` 时间参数与非法输入拦截）、
+工程文件完整性、脚本语法与 HTML 结构。
 
 `npm run smoke` 会真实启动 Electron 窗口，验证：自定义 `plt-media://` 协议能否播放 MP4（时长/解码/跳转）、
 同名字幕自动配对、24 行字幕渲染、快捷键与进度条联动，并在 `samples\` 下输出三张截图（整窗 / 文字区 1:1 / 词典面板）。
@@ -336,11 +395,26 @@ A：点「时间轴」按钮整篇平移（例如 `-0.35` 秒），或进入「�
 **Q：查词报 401 / 402 / 429？**
 A：401 = Key 无效；402 = 余额不足；429 = 频率过高。设置面板的「测试连接」会给出明确提示。
 
+**Q：在线播放为什么没有字幕、不能点句跳转？**
+A：YouTube 不把字幕文本暴露给第三方嵌入播放器，所以在线模式只能播。**要完整功能就选「下载到本地」** —— 下完当本地文件播放，点句跳转、跟读、分级取词全部照常。
+
+**Q：点「下载到本地」提示要下载 yt-dlp，安全吗？**
+A：yt-dlp 是开源命令行工具，从它的 GitHub 官方发布页下载到本机 `PodcastsLearningData\tools\`，不放进安装包是因为它体积大且每周更新。你也可以自己装好后在设置里指定路径。
+
+**Q：下载很慢 / 只有声音没有画面？**
+A：没装 ffmpeg 时会自动降级为只下载音频（对跟读够用）。装上 ffmpeg 就能合成带画面的 MP4。
+
 **Q：想完全离线、不花钱？**
 A：装 [Ollama](https://ollama.com/) 后设置服务商选「本地 Ollama」即可；屏幕取词本来就用的离线 OCR。
 
 **Q：便携版和安装版能同时用吗？**
 A：可以，各自独立的数据目录，互不影响。
+
+**Q：macOS 打开时提示「已损坏 / 无法验证开发者」？**
+A：打包脚本 `npm run dist:mac` 已经用系统自带 `codesign -s -` 给 `.app` 做了 **ad-hoc 自签名**（本机 `open` 已验证可正常启动），但 ad-hoc 不是付费的「开发者签名 + 公证」，所以**从互联网下载**的 `.app` 仍可能被 Gatekeeper 拦。仍要打开：在「应用程序」里右键应用 → 打开（或 `系统设置 → 隐私与安全性` 里点「仍要打开」）；也可在终端执行 `sudo xattr -rd com.apple.quarantine "/Applications/Podcasts Learning Tool.app"` 一次性解除隔离。从本仓库下载的 dmg/zip 第一次打开若报「已损坏」，多半是隔离属性未清，清掉即可。后续若要发布给陌生用户「双击即用」，用有效 **Developer ID 签名并公证**即可（把 `build.mac.identity` 设为你的证书名，其余交给 electron-builder）。
+
+**Q：macOS 屏幕取词用不了 / 提示 OCR 不可用？**
+A：先确认已装 **Xcode 命令行工具**（`xcode-select --install`，Swift 辅助程序首次需就地编译）；再到 **系统设置 → 隐私与安全性** 授予**屏幕录制**与**辅助功能**权限，并完全退出重开应用让权限生效。这些都就绪后「设置 → 高级 → OCR 可用性检测」应显示可用。
 
 ---
 

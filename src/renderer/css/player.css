@@ -26,6 +26,18 @@ body[data-theme="light"] .stage { background: radial-gradient(120% 100% at 50% 0
 .stage.has-audio .media { display: none; }
 .stage.has-media .dropzone { display: none; }
 
+/* 在线视频（YouTube）：盖住本地 <video>，撑满播放区 */
+.yt-host {
+  position: absolute;
+  inset: 0;
+  background: #000;
+  display: none;
+}
+.yt-host:not(.hidden) { display: block; }
+.yt-host iframe { width: 100%; height: 100%; border: 0; display: block; }
+.stage.has-online .media,
+.stage.has-online .audio-visual { display: none; }
+
 /* 拖放提示 */
 .dropzone {
   position: absolute;

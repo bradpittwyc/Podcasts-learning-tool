@@ -1,12 +1,12 @@
 'use strict';
 /**
- * ocr.js — 屏幕取词 OCR（Windows.Media.Ocr 桥接）
+ * ocr.js — 屏幕取词 OCR
  *
  * 屏幕取词三种方式，全部离线/低成本：
- *   1) 划词：按住热键 → 此时前台程序若为浏览器/PDF 阅读器，模拟 Ctrl+C 抓取选区文字
- *   2) 截图 OCR：框选屏幕区域 → Windows 内置 OCR → 文本（默认，无需网络）
+ *   1) 划词：按住热键 → 抓前台程序的选区文字（Windows: SendKeys ^c / macOS: Accessibility）
+ *   2) 截图 OCR：框选屏幕区域 → 系统内置 OCR（Windows: Windows.Media.Ocr / macOS: Vision）
  *   3) 视觉模型（可选）：把截图交给支持视觉的大模型
- * 本文件实现 1 与 2 的底层，并把结果交给 llm.js 做分级释义。
+ * 本文件实现 2 的底层，并把结果交给 llm.js 做分级释义。
  */
 
 const { spawn } = require('child_process');
@@ -14,6 +14,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { app } = require('electron');
+const platform = require('./platform');
 
 const OCR_LANGS = process.env.PLT_OCR_LANGS || 'en-US,zh-Hans-CN';
 
@@ -35,8 +36,21 @@ function powershellExe() {
   return 'powershell.exe';
 }
 
-/** 运行 OCR，返回 { ok, text, lines, lang } */
+/** 运行 OCR，返回 { ok, text, lines, lang, engine } */
 function recognizeFile(imagePath, opts = {}) {
+  if (platform.IS_MAC) return recognizeFileMac(imagePath, opts);
+  return recognizeFileWin(imagePath, opts);
+}
+
+function recognizeFileMac(imagePath, opts = {}) {
+  const macHelper = require('./mac-helper');
+  return macHelper
+    .run(['ocr', '--path', imagePath, '--langs', opts.langs || OCR_LANGS], 30000)
+    .then((res) => (res.ok ? { ...res, engine: 'macOS Vision' } : res))
+    .catch((err) => ({ ok: false, code: 'HELPER_FAILED', error: err.message }));
+}
+
+function recognizeFileWin(imagePath, opts = {}) {
   return new Promise((resolve) => {
     const args = [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass',
@@ -101,8 +115,10 @@ async function recognizeDataUrl(dataUrl, opts = {}) {
 }
 
 /**
- * 引擎可用性检测：真实调用一次 Windows.Media.Ocr（不涉及屏幕捕获权限），
- * 返回语言包是否就绪。截图链路本身由渲染进程的 getDisplayMedia 在首次使用时授权。
+ * 引擎可用性检测：真实跑一次内置 OCR（只喂 1×1 白图，不涉及屏幕捕获权限）。
+ *   Windows → Windows.Media.Ocr（同时验证语言包是否就绪）
+ *   macOS   → Vision（同时验证 helper 能否编译/运行）
+ * 截图链路本身由渲染进程的 getDisplayMedia 在首次使用时授权。
  */
 async function probe() {
   const dir = path.join(os.tmpdir(), 'plt-ocr');
@@ -117,6 +133,18 @@ async function probe() {
     return { ok: false, code: 'WRITE_FAILED', error: err.message };
   }
   try {
+    if (platform.IS_MAC) {
+      const macHelper = require('./mac-helper');
+      const st = macHelper.status();
+      if (!st.helper && !st.swiftc) {
+        return { ok: false, code: 'NO_SWIFTC', error: '本机缺少 Xcode 命令行工具，无法编译 OCR Helper。', hint: 'xcode-select --install' };
+      }
+      const res = await recognizeFile(file);
+      if (res.ok) {
+        return { ok: true, lang: res.lang, engine: 'macOS Vision', revision: res.revision, script: st.source || 'helper/plt-macos.swift' };
+      }
+      return { ok: false, code: res.code, error: res.error };
+    }
     const res = await recognizeFile(file);
     if (res.ok) return { ok: true, lang: res.lang, engine: 'Windows.Media.Ocr', script: scriptPath() };
     return { ok: false, code: res.code, error: res.error, script: scriptPath() };

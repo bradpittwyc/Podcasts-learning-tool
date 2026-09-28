@@ -2,15 +2,18 @@
 /**
  * screen-text.js — 从「当前前台窗口」抓取用户选中的文字
  *
- * 原理：调用 PowerShell + System.Windows.Forms.SendKeys 发送 ^c，
- * 读取剪贴板差异，再恢复原剪贴板内容。无需任何原生模块。
- * 对被拒绝/无选区的情况返回空串，UI 会提示改用「截图 OCR」。
+ * Windows：PowerShell + System.Windows.Forms.SendKeys 发送 ^c，读剪贴板差异再还原。
+ * macOS  ：Accessibility API 直读 AXSelectedText —— 不模拟按键、不碰剪贴板，
+ *          代价是需要在「系统设置 → 隐私与安全性 → 辅助功能」里勾选本应用。
+ *
+ * 被拒绝 / 无选区时返回 ok:false，UI 会提示改用「截图 OCR」。
  */
 
 const { spawn } = require('child_process');
 const fs = require('fs');
 const path = require('path');
 const { clipboard } = require('electron');
+const platform = require('./platform');
 
 function powershellExe() {
   const sys = process.env.SystemRoot || 'C:\\Windows';
@@ -34,9 +37,26 @@ function runPowerShell(script, timeoutMs = 6000) {
 
 /**
  * 复制前台应用选中文字
- * @returns {Promise<{ok:boolean, text:string, restored:boolean}>}
+ * @returns {Promise<{ok:boolean, text:string, restored:boolean, code?:string, error?:string}>}
  */
 async function captureSelection(opts = {}) {
+  if (platform.IS_MAC) return captureSelectionMac(opts);
+  return captureSelectionWin(opts);
+}
+
+/**
+ * macOS：Accessibility 直读选中文本。
+ * 返回结构对齐 Windows 版 { ok, text, restored }，额外带 code 便于 UI 给精确引导。
+ */
+async function captureSelectionMac(opts = {}) {
+  const res = await require('./mac-helper').run(['selection'], 8000);
+  if (res.ok && res.text) return { ok: true, text: String(res.text).trim(), restored: true };
+  const code = res.code || 'NO_SELECTION';
+  const error = res.error || (code === 'NO_SELECTION' ? '' : '未能读取选中文字');
+  return { ok: false, text: '', code, error, restored: true, touchesClipboard: false };
+}
+
+async function captureSelectionWin(opts = {}) {
   const prevText = clipboard.readText();
   const prevHtml = clipboard.readHTML();
   // 清空剪贴板以便判断是否真的有新内容（否则可能读到旧内容）

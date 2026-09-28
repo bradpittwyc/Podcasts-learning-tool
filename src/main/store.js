@@ -5,12 +5,14 @@
  * 便携模式(Portable)判定顺序：
  *   1. electron-builder portable 打包运行时注入的 PORTABLE_EXECUTABLE_DIR
  *   2. 可执行文件所在目录存在 `portable-data` 文件夹 或 `portable.flag` 文件
+ *   3. macOS：`.app` 所在目录同上（用户只能碰到 .app 这一层）
  * 命中后，所有数据写入同级 `PodcastsLearningData` 目录，真正做到绿色免安装。
  */
 
 const fs = require('fs');
 const path = require('path');
 const { app, safeStorage } = require('electron');
+const platform = require('./platform');
 
 const DEFAULT_SETTINGS = {
   schema: 1,
@@ -21,12 +23,17 @@ const DEFAULT_SETTINGS = {
     model: 'deepseek-flash',
     apiKeyEnc: '',          // safeStorage 加密后的 base64
     apiKeyPlain: '',        // 无法加密时的降级存储（有提示）
-    useBundled: true,       // 没有自己的 Key 时，是否使用本地构建内嵌的出厂 Key
     temperature: 0.2,
     maxTokens: 8192,
     timeoutMs: 45000,
     thinking: false,         // 关闭思考模式：V4 默认开启且思维链按输出计费，词典任务不需要
     batchSize: 24           // 一次请求最多多少个词（省钱：批量合并）
+  },
+  // ── 在线视频（YouTube） ─────────────────────────────────────
+  yt: {
+    dlpPath: '',            // yt-dlp 路径；留空 = 自动查找（数据目录 tools\ / 程序目录 / PATH）
+    downloadDir: '',        // 下载落到哪；留空 = 数据目录下的 YouTube\
+    preferVideo: true       // 有 ffmpeg 时下「视频+音频」，没有则自动降级为只下音频
   },
   // ── 取词难度分级（核心省钱开关） ───────────────────────────────
   lookup: {
@@ -212,21 +219,16 @@ class Store {
 // ─────────────────────────────────────────────────────────────
 let cachedDataDir = null;
 
+/** 便携模式判定统一走 platform.portableRoot（macOS 上看 .app 同级目录） */
 function isPortable() {
-  if (process.env.PORTABLE_EXECUTABLE_DIR) return true;
-  try {
-    const exeDir = path.dirname(app.getPath('exe'));
-    if (fs.existsSync(path.join(exeDir, 'portable.flag'))) return true;
-    if (fs.existsSync(path.join(exeDir, 'portable-data'))) return true;
-  } catch (_) { /* ignore */ }
-  return false;
+  return !!platform.portableRoot(app);
 }
 
 function getDataDir() {
   if (cachedDataDir) return cachedDataDir;
-  if (isPortable()) {
-    const base = process.env.PORTABLE_EXECUTABLE_DIR || path.dirname(app.getPath('exe'));
-    cachedDataDir = path.join(base, 'PodcastsLearningData');
+  const portableBase = platform.portableRoot(app);
+  if (portableBase) {
+    cachedDataDir = path.join(portableBase, 'PodcastsLearningData');
   } else {
     cachedDataDir = app.getPath('userData');
   }
@@ -263,46 +265,32 @@ function history() {
 }
 
 // ── API Key 安全存储 ─────────────────────────────────────────
-/**
- * 出厂预置 Key：本地构建时随 src/ 一起打进 asar（该文件被 .gitignore 排除，
- * 公开仓库 / CI 构建里不存在，此时返回空串，走「用户自己填」的正常流程）。
- */
-function bundledKey() {
-  try {
-    const m = require('./default-key');
-    return String((m && m.key) || '').trim();
-  } catch (_) {
-    return '';
-  }
-}
+// 本应用**不内置任何出厂 Key**：Key 一律来自使用者本人在「设置 → 大模型」中填写，
+// 或由上层平台（网站 / 后端）统一注入。仓库源码与构建产物里都不含明文 Key。
 
 function setApiKey(plain) {
   const s = settings();
   if (!plain) {
     s.set('llm.apiKeyEnc', '');
     s.set('llm.apiKeyPlain', '');
-    s.set('llm.useBundled', false);   // 用户明确清空 → 连内置 Key 也不用
     return { ok: true, encrypted: false };
   }
   if (safeStorage.isEncryptionAvailable()) {
     s.set('llm.apiKeyEnc', safeStorage.encryptString(plain).toString('base64'));
     s.set('llm.apiKeyPlain', '');
-    s.set('llm.useBundled', true);
     return { ok: true, encrypted: true };
   }
   s.set('llm.apiKeyPlain', plain);
   s.set('llm.apiKeyEnc', '');
-  s.set('llm.useBundled', true);
   return { ok: true, encrypted: false };
 }
 
 /**
  * 取 Key 的顺序：
  *   1. 用户自己填的（safeStorage 密文）—— 但换过 exe / 换过机器可能解不开；
- *   2. 明文降级位（系统不支持加密时才会用到）；
- *   3. 构建内嵌的出厂 Key（useBundled 时）。
- * 第 1 步解不开时**不再直接返回空**（那会让界面显示「未配置 Key」却查不了词），
- * 而是继续往下兜底 —— 密文失效也能自愈。
+ *   2. 明文降级位（系统不支持加密时才会用到）。
+ * 两者都没有就返回空串：此时分级取词 / 全文扫描仍然可用（走本地离线词典），
+ * 只有「点选看释义」会提示需要配置 Key。
  */
 function getApiKey() {
   const s = settings();
@@ -312,12 +300,11 @@ function getApiKey() {
       const k = safeStorage.decryptString(Buffer.from(enc, 'base64'));
       if (k) return k;
     } catch (err) {
-      console.warn('[store] API Key 解密失败，改用兜底 Key：', err.message);
+      console.warn('[store] API Key 解密失败，请在设置里重新填写：', err.message);
     }
   }
   const plain = s.get('llm.apiKeyPlain', '');
   if (plain) return plain;
-  if (s.get('llm.useBundled', true) !== false) return bundledKey();
   return '';
 }
 
@@ -331,7 +318,6 @@ function apiKeySource() {
     } catch (_) { /* 落到下面兜底 */ }
   }
   if (s.get('llm.apiKeyPlain', '')) return 'plain';
-  if (s.get('llm.useBundled', true) !== false && bundledKey()) return 'bundled';
   return 'none';
 }
 
@@ -350,7 +336,6 @@ function debugKey() {
     encryptionAvailable: safeStorage.isEncryptionAvailable(),
     apiKeyEncLen: enc ? enc.length : 0,
     apiKeyPlain: !!plain,
-    bundledAvailable: !!bundledKey(),
     source: apiKeySource(),
     decryptOk: false,
     decryptError: null,
@@ -376,7 +361,7 @@ function publicSettings() {
   const key = getApiKey();
   data.llm.hasApiKey = !!key;
   data.llm.apiKeyHint = key ? key.slice(0, 4) + '••••••••' + key.slice(-4) : '';
-  data.llm.apiKeySource = apiKeySource();   // stored | plain | bundled | none
+  data.llm.apiKeySource = apiKeySource();   // stored | plain | none
   delete data.llm.apiKeyEnc;
   delete data.llm.apiKeyPlain;
   data.meta = {

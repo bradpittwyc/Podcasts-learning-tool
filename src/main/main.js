@@ -20,6 +20,8 @@ const localDict = require('./local-dict');
 const ocr = require('./ocr');
 const screenText = require('./screen-text');
 const updater = require('./updater');
+const yt = require('./youtube');
+const platform = require('./platform');
 
 const isDev = process.argv.includes('--dev') || !!process.env.PLT_DEV;
 const isSmoke = process.argv.includes('--smoke-test');
@@ -41,6 +43,13 @@ app.setName('Podcasts Learning Tool');
 let mainWindow = null;
 let quickWindow = null;
 const pendingOpenFiles = [];
+
+/** 向渲染进程推送在线视频下载进度（窗口还没建好时静默丢弃） */
+function sendYtProgress(payload) {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send('yt:progress', payload);
+  } catch (_) { /* ignore */ }
+}
 
 const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) {
@@ -86,15 +95,8 @@ function collectArgvFiles(argv) {
 // 便携模式：必须在 app ready 之前改 userData
 // ─────────────────────────────────────────────────────────────
 (function applyPortablePaths() {
-  const portableDir = process.env.PORTABLE_EXECUTABLE_DIR;
-  let base = null;
-  if (portableDir) base = portableDir;
-  else {
-    try {
-      const exeDir = path.dirname(app.getPath('exe'));
-      if (fs.existsSync(path.join(exeDir, 'portable.flag')) || fs.existsSync(path.join(exeDir, 'portable-data'))) base = exeDir;
-    } catch (_) { /* ignore */ }
-  }
+  // Windows 看 exe 同级；macOS 看 .app 同级（详见 platform.portableRoot）
+  const base = platform.portableRoot(app);
   if (base) {
     // 便携模式把 userData 也放进数据目录，缓存/设置全部随身携带
     const dataDir = path.join(base, 'PodcastsLearningData');
@@ -249,9 +251,11 @@ function createMainWindow() {
     title: `Podcasts Learning Tool v${app.getVersion()}`,
     backgroundColor: nativeTheme.shouldUseDarkColors ? '#1b1b1f' : '#f6f7fb',
     autoHideMenuBar: true,
-    frame: false,
-    titleBarStyle: 'hidden',
-    trafficLightPosition: undefined,
+    // Windows 全自绘（无边框 + 自绘最小化/最大化/关闭）；
+    // macOS 保留原生外壳以便显示红黄绿交通灯，自绘三键由 CSS 藏起来。
+    frame: platform.IS_MAC ? true : false,
+    titleBarStyle: platform.IS_MAC ? 'hiddenInset' : 'hidden',
+    trafficLightPosition: platform.IS_MAC ? { x: 14, y: 12 } : undefined,
     roundedCorners: true,
     webPreferences: {
       preload: path.join(__dirname, '..', 'preload', 'preload.js'),
@@ -304,7 +308,7 @@ function createMainWindow() {
 
 function applyBackdrop(win) {
   const s = store.settings();
-  if (process.platform !== 'win32' || !win.setBackgroundMaterial) return;
+  if (!platform.supportsBackdropMaterial() || !win.setBackgroundMaterial) return;
   const want = s.get('ui.mica', true) ? s.get('ui.backdrop', 'acrylic') : 'none';
   try {
     win.setBackgroundMaterial(want === 'none' ? 'none' : want);
@@ -383,74 +387,101 @@ function createQuickWindow(payload) {
 // 应用菜单（中文）
 // ─────────────────────────────────────────────────────────────
 function buildMenu() {
-  const isMac = process.platform === 'darwin';
-  const template = [
-    {
-      label: '文件(&F)',
+  const act = (action) => () => mainWindow?.webContents.send('menu:action', action);
+  const template = [];
+
+  // macOS 的惯例：第一个菜单必须是「应用菜单」（关于 / 设置 / 服务 / 隐藏 / 退出），
+  // 少了它 Cmd+W、Cmd+H、Cmd+Q 这些系统习惯键会失效或报「无此菜单项」。
+  if (platform.IS_MAC) {
+    template.push({
+      label: app.getName(),
       submenu: [
-        { label: '打开媒体文件…', accelerator: 'CmdOrCtrl+O', click: () => mainWindow?.webContents.send('menu:action', 'open-media') },
-        { label: '打开字幕文件…', accelerator: 'CmdOrCtrl+Shift+O', click: () => mainWindow?.webContents.send('menu:action', 'open-subtitle') },
-        { label: '批量导入文件夹…', click: () => mainWindow?.webContents.send('menu:action', 'open-folder') },
+        { label: `关于 ${app.getName()}`, role: 'about' },
         { type: 'separator' },
-        { label: '保存校对后的字幕…', accelerator: 'CmdOrCtrl+S', click: () => mainWindow?.webContents.send('menu:action', 'save-subtitle') },
-        { label: '导出学习笔记(Markdown)…', click: () => mainWindow?.webContents.send('menu:action', 'export-notes') },
+        { label: '设置…', accelerator: 'CmdOrCtrl+,', click: act('open-settings') },
         { type: 'separator' },
-        { label: '退出', role: isMac ? 'close' : 'quit' }
+        { role: 'services' },
+        { type: 'separator' },
+        { role: 'hide' },
+        { role: 'hideOthers' },
+        { role: 'unhide' },
+        { type: 'separator' },
+        { role: 'quit' }
+      ]
+    });
+  }
+
+  template.push({
+    label: platform.menuLabel('文件(&F)'),
+    submenu: [
+      { label: '打开媒体文件…', accelerator: 'CmdOrCtrl+O', click: act('open-media') },
+      // macOS 上 Cmd+W 关窗口是肌肉记忆，没有「关闭窗口」菜单项就是按不动
+      ...(platform.IS_MAC ? [{ role: 'close' }] : []),
+      { label: '打开字幕文件…', accelerator: 'CmdOrCtrl+Shift+O', click: act('open-subtitle') },
+      { label: '批量导入文件夹…', click: act('open-folder') },
+      { type: 'separator' },
+      { label: '保存校对后的字幕…', accelerator: 'CmdOrCtrl+S', click: act('save-subtitle') },
+      { label: '导出学习笔记(Markdown)…', click: act('export-notes') },
+      { type: 'separator' },
+      // macOS 的「文件」菜单里已经有系统自带的「关闭窗口」语义，这里只补一个真正的退出
+      ...(platform.IS_MAC ? [] : [{ label: '退出', role: 'quit' }])
+    ]
+  });
+
+  template.push(
+    {
+      label: platform.menuLabel('播放(&P)'),
+      submenu: [
+        { label: '播放/暂停', accelerator: 'Space', click: act('toggle-play') },
+        { label: '上一句', accelerator: 'CmdOrCtrl+Left', click: act('prev-line') },
+        { label: '下一句', accelerator: 'CmdOrCtrl+Right', click: act('next-line') },
+        { label: '重播当前句', accelerator: 'CmdOrCtrl+R', click: act('replay-line') },
+        { type: 'separator' },
+        { label: '减速', accelerator: 'CmdOrCtrl+[', click: act('speed-down') },
+        { label: '加速', accelerator: 'CmdOrCtrl+]', click: act('speed-up') },
+        { type: 'separator' },
+        { label: '显示/隐藏字幕', accelerator: platform.menuAccel('CmdOrCtrl+H'), click: act('toggle-subtitle') }
       ]
     },
     {
-      label: '播放(&P)',
+      label: platform.menuLabel('学习(&L)'),
       submenu: [
-        { label: '播放/暂停', accelerator: 'Space', click: () => mainWindow?.webContents.send('menu:action', 'toggle-play') },
-        { label: '上一句', accelerator: 'CmdOrCtrl+Left', click: () => mainWindow?.webContents.send('menu:action', 'prev-line') },
-        { label: '下一句', accelerator: 'CmdOrCtrl+Right', click: () => mainWindow?.webContents.send('menu:action', 'next-line') },
-        { label: '重播当前句', accelerator: 'CmdOrCtrl+R', click: () => mainWindow?.webContents.send('menu:action', 'replay-line') },
+        { label: '查词（选中文本）', accelerator: 'CmdOrCtrl+D', click: act('lookup-selection') },
+        { label: '屏幕取词（截图 OCR）', accelerator: 'CmdOrCtrl+Shift+S', click: act('screen-ocr') },
+        { label: '扫描全文难词（按当前级别）', accelerator: 'CmdOrCtrl+Shift+D', click: act('scan-all') },
         { type: 'separator' },
-        { label: '减速', accelerator: 'CmdOrCtrl+[', click: () => mainWindow?.webContents.send('menu:action', 'speed-down') },
-        { label: '加速', accelerator: 'CmdOrCtrl+]', click: () => mainWindow?.webContents.send('menu:action', 'speed-up') },
-        { type: 'separator' },
-        { label: '显示/隐藏字幕', accelerator: 'CmdOrCtrl+H', click: () => mainWindow?.webContents.send('menu:action', 'toggle-subtitle') }
+        { label: '生词本', click: act('show-vocab') }
       ]
     },
     {
-      label: '学习(&L)',
+      label: platform.menuLabel('视图(&V)'),
       submenu: [
-        { label: '查词（选中文本）', accelerator: 'CmdOrCtrl+D', click: () => mainWindow?.webContents.send('menu:action', 'lookup-selection') },
-        { label: '屏幕取词（截图 OCR）', accelerator: 'CmdOrCtrl+Shift+S', click: () => mainWindow?.webContents.send('menu:action', 'screen-ocr') },
-        { label: '扫描全文难词（按当前级别）', accelerator: 'CmdOrCtrl+Shift+D', click: () => mainWindow?.webContents.send('menu:action', 'scan-all') },
+        { label: '放大界面', accelerator: 'CmdOrCtrl+=', click: act('zoom-in') },
+        { label: '缩小界面', accelerator: 'CmdOrCtrl+-', click: act('zoom-out') },
+        { label: '重置缩放', accelerator: 'CmdOrCtrl+0', click: act('zoom-reset') },
         { type: 'separator' },
-        { label: '生词本', click: () => mainWindow?.webContents.send('menu:action', 'show-vocab') }
-      ]
-    },
-    {
-      label: '视图(&V)',
-      submenu: [
-        { label: '放大界面', accelerator: 'CmdOrCtrl+=', click: () => mainWindow?.webContents.send('menu:action', 'zoom-in') },
-        { label: '缩小界面', accelerator: 'CmdOrCtrl+-', click: () => mainWindow?.webContents.send('menu:action', 'zoom-out') },
-        { label: '重置缩放', accelerator: 'CmdOrCtrl+0', click: () => mainWindow?.webContents.send('menu:action', 'zoom-reset') },
-        { type: 'separator' },
-        { label: '浅色/深色跟随系统', click: () => mainWindow?.webContents.send('menu:action', 'theme-system') },
-        { label: '强制浅色', click: () => mainWindow?.webContents.send('menu:action', 'theme-light') },
-        { label: '强制深色', click: () => mainWindow?.webContents.send('menu:action', 'theme-dark') },
+        { label: '浅色/深色跟随系统', click: act('theme-system') },
+        { label: '强制浅色', click: act('theme-light') },
+        { label: '强制深色', click: act('theme-dark') },
         { type: 'separator' },
         { label: '重新加载', role: 'reload' },
         { label: '开发者工具', role: 'toggleDevTools' }
       ]
     },
     {
-      label: '帮助(&H)',
+      label: platform.menuLabel('帮助(&H)'),
       submenu: [
         { label: '使用说明 / README', click: () => shell.openExternal('https://github.com/bradpittwyc/Podcasts-learning-tool#readme') },
         { label: '项目主页', click: () => shell.openExternal('https://github.com/bradpittwyc/Podcasts-learning-tool') },
         { type: 'separator' },
-        { label: '检查更新…', click: () => { mainWindow?.webContents.send('menu:action', 'check-update'); } },
+        { label: '检查更新…', click: act('check-update') },
         { label: '打开发布页', click: () => updater.openRelease() },
         { type: 'separator' },
         { label: '数据目录', click: () => shell.openPath(store.getDataDir()) },
-        { label: '关于', click: () => mainWindow?.webContents.send('menu:action', 'about') }
+        { label: '关于', click: act('about') }
       ]
     }
-  ];
+  );
   Menu.setApplicationMenu(Menu.buildFromTemplate(template));
 }
 
@@ -663,6 +694,62 @@ function registerIpc() {
   ipcMain.handle('file:findSiblingSubtitle', (_e, mediaPath) => {
     const found = subs.findSiblingSubtitle(mediaPath);
     return found ? { path: found } : null;
+  });
+
+  // ══════════════════════════════════════════════════════════
+  // 在线视频（YouTube）
+  // ══════════════════════════════════════════════════════════
+
+  /** 解析粘贴进来的链接 → { id, url, list, start } */
+  ipcMain.handle('yt:parse', (_e, input) => yt.parseUrl(input));
+
+  /** 取标题/作者/缩略图（公开 oEmbed，不需要 Key） */
+  ipcMain.handle('yt:meta', async (_e, videoUrl) => {
+    try { return await yt.fetchMeta(videoUrl); }
+    catch (err) { return { ok: false, error: err.message }; }
+  });
+
+  /** yt-dlp / ffmpeg 是否就绪，下载目录在哪 */
+  ipcMain.handle('yt:toolStatus', () => yt.toolStatus());
+
+  /** 一键把 yt-dlp.exe 装到数据目录 tools\ */
+  ipcMain.handle('yt:installTool', async () => {
+    try {
+      const r = await yt.installYtDlp((pct) => sendYtProgress({ phase: 'installing', percent: pct }));
+      return { ok: true, path: r.path, bytes: r.bytes };
+    } catch (err) { return { ok: false, error: err.message }; }
+  });
+
+  /** 下载视频（+字幕）到本地；进度通过 yt:progress 推送 */
+  ipcMain.handle('yt:download', async (_e, payload) => {
+    const url = (payload && payload.url) || '';
+    const id = (payload && payload.id) || '';
+    if (!url || !id) return { ok: false, error: '缺少链接或视频 ID' };
+    try {
+      const result = await yt.downloadVideo({
+        url,
+        id,
+        onProgress: (percent, line) => sendYtProgress({ phase: 'downloading', id, percent, line })
+      });
+      sendYtProgress({ phase: 'done', id, percent: 100 });
+      return { ok: true, ...result };
+    } catch (err) {
+      const code = err && err.message === 'NO_YTDLP' ? 'NO_YTDLP'
+        : err && err.message === 'CANCELED' ? 'CANCELED' : 'FAILED';
+      sendYtProgress({ phase: 'error', id, error: err.message });
+      return { ok: false, code, error: err.message };
+    }
+  });
+
+  ipcMain.handle('yt:cancel', () => ({ ok: true, canceled: yt.cancelAll() }));
+
+  ipcMain.handle('yt:openDir', (_e, dir) => {
+    try {
+      const target = dir || yt.downloadDir();
+      fs.mkdirSync(target, { recursive: true });
+      shell.openPath(target);
+      return { ok: true, dir: target };
+    } catch (err) { return { ok: false, error: err.message }; }
   });
 
   // 扫描文件夹并配对同名字幕（供「文件夹导入」列表与自动化测试复用）
@@ -1091,6 +1178,22 @@ app.whenReady().then(() => {
   updater.scheduleAutoCheck(mainWindow);
 
   if (isSmoke) runSmokeTest();
+
+  // macOS：Finder 里双击媒体/字幕文件、或用「打开方式」启动时走 open-file 事件
+  // （不像 Windows 那样塞进 argv），漏掉这个功能用户会以为不支持。
+  if (platform.IS_MAC) {
+    app.on('open-file', (e, filePath) => {
+      e.preventDefault();
+      if (!filePath || !isSupportedFile(filePath)) return;
+      if (mainWindow && !mainWindow.isDestroyed()) {
+        if (mainWindow.isMinimized()) mainWindow.restore();
+        mainWindow.focus();
+        mainWindow.webContents.send('app:open-files', [filePath]);
+      } else {
+        pendingOpenFiles.push(filePath);
+      }
+    });
+  }
 
   app.on('activate', () => { if (!BrowserWindow.getAllWindows().length) createMainWindow(); });
 });

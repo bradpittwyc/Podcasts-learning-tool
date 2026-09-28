@@ -176,6 +176,7 @@
       infoCur.textContent = 'v' + (s.current || '?');
       infoLatest.textContent = s.latest ? 'v' + s.latest : '—';
       infoMode.textContent = s.mode === 'portable' ? '便携版（下载后自动换 exe）'
+        : s.mode === 'mac' ? 'macOS（下载后自动替换 .app）'
         : s.mode === 'installer' ? '安装版（静默原地升级）' : '开发模式（不检查）';
       infoLast.textContent = relTime(s.lastCheck);
       barPct.textContent = `${s.percent || 0}%`;
