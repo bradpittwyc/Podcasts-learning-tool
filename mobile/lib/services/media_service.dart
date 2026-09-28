@@ -11,12 +11,18 @@ class MediaService {
   }
 
   /// 选字幕文件（srt/vtt/txt）。
+  /// 注意：不用 FileType.custom —— 部分 ROM 的 DocumentsUI 对 .srt 返回
+  /// application/octet-stream，与 EXTRA_MIME_TYPES 不匹配会被静默过滤成空结果。
+  /// 放开为任意类型，选完后在本地按扩展名过滤。
   static Future<String?> pickSubtitle() async {
-    final res = await FilePicker.pickFiles(
-      type: FileType.custom,
-      allowedExtensions: ['srt', 'vtt', 'txt'],
-    );
-    return res.isNotEmpty ? res.first.path : null;
+    final res = await FilePicker.pickFiles();
+    for (final f in res) {
+      final p = f.path;
+      if (p == null) continue;
+      final ext = (f.extension ?? p.split('.').last).toLowerCase();
+      if (['srt', 'vtt', 'txt'].contains(ext)) return p;
+    }
+    return null;
   }
 
   /// 同时选「媒体 + 字幕」两个文件。

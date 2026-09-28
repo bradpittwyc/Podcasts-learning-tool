@@ -18,13 +18,15 @@ class TranscriptView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final track = controller.track;
-    if (track == null || track.cues.isEmpty) {
-      return const Center(child: Text('尚未加载字幕'));
-    }
+    // 注意：track 判空必须放在 ListenableBuilder 内部——若放在外面，
+    // 「尚未加载字幕」分支不含监听者，加载字幕后的 notifyListeners 无人响应，界面永远不刷新。
     return ListenableBuilder(
       listenable: controller,
       builder: (ctx, _) {
+        final track = controller.track;
+        if (track == null || track.cues.isEmpty) {
+          return const Center(child: Text('尚未加载字幕'));
+        }
         final cur = controller.currentIndex;
         return ListView.builder(
           controller: scrollController,
