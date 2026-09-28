@@ -1,6 +1,8 @@
 # 依赖与构建产物
 node_modules/
 release/
+release-test/
+release-test2/
 dist/
 out/
 *.log
@@ -40,7 +42,9 @@ desktop.ini
 .env
 .env.*
 
-# 出厂预置的 API Key（本地构建内嵌，绝不入库）
+# 注意：本仓库**不内置任何 API Key**。历史上曾用 src/main/default-key.js
+# 在构建时内嵌出厂 Key，现已移除；本地若残留该文件也不会被 require，但请勿提交。
+default-key.js
 src/main/default-key.js
 
 # 生成的离线词典（npm run dict 可重建，数据源 ECDICT）
@@ -49,6 +53,14 @@ resources/local-dict.json.gz
 .tmp-dict/
 release-public/
 
-# ���������õ���ʱĿ¼���ں����� exe��������⣩
+# 升级测试用的临时目录（内含完整 exe，绝不入库）
 tmp-upd/
 tmp-*/
+
+# Flutter / Dart 构建产物（mobile/ 子工程，绝不入库）
+/mobile/.dart_tool/
+/mobile/build/
+/mobile/.flutter-plugins
+/mobile/.flutter-plugins-dependencies
+/mobile/.idea/
+/mobile/android/.gradle/
